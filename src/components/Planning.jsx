@@ -1,0 +1,324 @@
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+
+const API = 'https://mon-planning-production.up.railway.app/api';
+const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration'];
+const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const SHIFTS = [
+  { id: 'matin', label: 'Matin', start: '07:00', end: '13:00', bg: '#2A1F4A', border: '#7C6FCD', text: '#B8B0F0' },
+  { id: 'apres_midi', label: 'Apres-midi', start: '13:00', end: '19:00', bg: '#1A3A2A', border: '#2DB87A', text: '#7DDBB0' },
+  { id: 'journee', label: 'Journee', start: '09:00', end: '17:00', bg: '#3A2A10', border: '#F5A623', text: '#F5C870' },
+  { id: 'soir', label: 'Soir', start: '18:00', end: '23:30', bg: '#3A1A1A', border: '#E85D5D', text: '#F0A0A0' },
+  { id: 'custom', label: 'Personnalise', start: '08:00', end: '16:00', bg: '#1A2A3A', border: '#5B9BD5', text: '#90C0F0' },
+];
+
+const C = {
+  bg: '#0F1117', card: '#1A1D27', border: '#2A2D3A',
+  text: '#E8E6DC', muted: '#6B6E82', purple: '#7C6FCD',
+  green: '#2DB87A', amber: '#F5A623', red: '#E85D5D',
+};
+
+const AVATAR_COLORS = ['#7C6FCD', '#2DB87A', '#F5A623', '#E85D5D', '#5B9BD5', '#F090D0'];
+
+function initials(f, l) { return (f?.[0] || '') + (l?.[0] || ''); }
+
+function getMonday(offset) {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1) + offset * 7;
+  const mon = new Date(now);
+  mon.setDate(diff);
+  mon.setHours(0, 0, 0, 0);
+  return mon;
+}
+
+function fmtDate(d) {
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+function addDays(d, n) {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+const months = ['jan', 'fev', 'mars', 'avr', 'mai', 'juin', 'juil', 'aout', 'sep', 'oct', 'nov', 'dec'];
+
+export default function Planning() {
+  const [service, setService] = useState('Restauration');
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [employees, setEmployees] = useState([]);
+  const [shifts, setShifts] = useState({});
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [toast, setToast] = useState('');
+  const [hovered, setHovered] = useState(null);
+  const [dragSrc, setDragSrc] = useState(null);
+  const toastTimer = useRef(null);
+
+  const mon = getMonday(weekOffset);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  useEffect(() => {
+    axios.get(API + '/employees').then(r => setEmployees(r.data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    axios.get(API + '/schedules?week=' + fmtDate(mon)).then(r => {
+      const map = {};
+      r.data.forEach(s => {
+        const dateKey = s.work_date ? s.work_date.slice(0, 10) : '';
+        map[s.employee_id + '-' + dateKey] = s;
+      });
+      setShifts(map);
+    }).catch(() => {});
+  }, [weekOffset]);
+
+  const filtered = employees.filter(e => e.service === service);
+
+  function showToast(msg) {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 2500);
+  }
+
+  function openModal(emp, dayIdx) {
+    const date = fmtDate(addDays(mon, dayIdx));
+    const existing = shifts[emp.id + '-' + date];
+    const sh = existing ? SHIFTS.find(s => s.id === existing.shift_type) || SHIFTS[0] : SHIFTS[0];
+    setForm({
+      empId: emp.id,
+      empName: emp.first_name + ' ' + emp.last_name,
+      date,
+      shiftId: sh.id,
+      start: existing ? existing.start_time.slice(0, 5) : sh.start,
+      end: existing ? existing.end_time.slice(0, 5) : sh.end,
+      existingId: existing ? existing.id : null,
+    });
+    setModal('add');
+  }
+
+  async function saveShift() {
+    try {
+      if (form.existingId) {
+        await axios.patch(API + '/schedules/' + form.existingId, {
+          start_time: form.start, end_time: form.end, shift_type: form.shiftId,
+        });
+      } else {
+        await axios.post(API + '/schedules', {
+          employee_id: form.empId, work_date: form.date,
+          start_time: form.start, end_time: form.end,
+          shift_type: form.shiftId, break_minutes: 0,
+        });
+      }
+      setShifts(prev => ({
+        ...prev,
+        [form.empId + '-' + form.date]: {
+          employee_id: form.empId, work_date: form.date,
+          start_time: form.start, end_time: form.end,
+          shift_type: form.shiftId, id: form.existingId || Date.now(),
+        },
+      }));
+      setModal(null);
+      showToast('Creneau enregistre');
+    } catch (err) {
+      showToast('Erreur : ' + (err.response?.data?.error || err.message));
+    }
+  }
+
+  async function deleteShift(e, shiftId, key) {
+    e.stopPropagation();
+    try {
+      await axios.delete(API + '/schedules/' + shiftId);
+      setShifts(prev => { const n = { ...prev }; delete n[key]; return n; });
+      showToast('Creneau supprime');
+    } catch {
+      showToast('Erreur suppression');
+    }
+  }
+
+  async function publishWeek() {
+    try {
+      const r = await axios.post(API + '/schedules/publish', { week: fmtDate(mon) });
+      showToast(r.data.published + ' creneau(x) publie(s)');
+    } catch {
+      showToast('Erreur publication');
+    }
+  }
+
+  function onDragStart(e, key, shift) {
+    setDragSrc({ key, shift });
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDragOver(e) { e.preventDefault(); }
+
+  async function onDrop(e, empId, dayIdx) {
+    e.preventDefault();
+    if (!dragSrc) return;
+    const newDate = fmtDate(addDays(mon, dayIdx));
+    const newKey = empId + '-' + newDate;
+    if (dragSrc.key === newKey) return;
+    try {
+      await axios.patch(API + '/schedules/' + dragSrc.shift.id, { work_date: newDate });
+      setShifts(prev => {
+        const n = { ...prev };
+        delete n[dragSrc.key];
+        n[newKey] = { ...dragSrc.shift, work_date: newDate, employee_id: empId };
+        return n;
+      });
+      showToast('Creneau deplace');
+    } catch {
+      showToast('Erreur deplacement');
+    }
+    setDragSrc(null);
+  }
+
+  const endMon = addDays(mon, 6);
+  const weekLabel = mon.getDate() + ' ' + months[mon.getMonth()] + ' -> ' + endMon.getDate() + ' ' + months[endMon.getMonth()] + ' ' + endMon.getFullYear();
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace" }}>
+
+      <div style={{ borderBottom: '1px solid ' + C.border, padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.card, flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {SERVICES.map(sv => (
+            <button key={sv}
+              style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (service === sv ? C.purple : C.border), background: service === sv ? C.purple + '22' : 'none', color: service === sv ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', letterSpacing: '0.06em' }}
+              onClick={() => setService(sv)}>{sv}</button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.text, cursor: 'pointer', padding: '4px 10px', fontSize: '13px', fontFamily: 'inherit' }}>{'<'}</button>
+          <span style={{ fontSize: '12px', minWidth: '200px', textAlign: 'center' }}>{weekLabel}</span>
+          <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.text, cursor: 'pointer', padding: '4px 10px', fontSize: '13px', fontFamily: 'inherit' }}>{'>'}</button>
+          <button onClick={() => setWeekOffset(0)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.muted, cursor: 'pointer', padding: '4px 10px', fontSize: '11px', fontFamily: 'inherit' }}>Auj.</button>
+          <button onClick={publishWeek} style={{ background: C.green, border: 'none', borderRadius: '6px', padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>Publier</button>
+        </div>
+      </div>
+
+      <div style={{ padding: '20px 24px' }}>
+        {filtered.length === 0 ? (
+          <div style={{ color: C.muted, textAlign: 'center', padding: '60px', fontSize: '13px' }}>
+            Aucun salarie dans le service {service}
+          </div>
+        ) : (
+          <div style={{ border: '1px solid ' + C.border, borderRadius: '10px', overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, 1fr)', background: C.card, borderBottom: '1px solid ' + C.border }}>
+              <div style={{ padding: '8px', borderRight: '1px solid ' + C.border }}></div>
+              {DAYS.map((d, i) => {
+                const day = addDays(mon, i);
+                const isToday = day.getTime() === today.getTime();
+                return (
+                  <div key={i} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '10px', color: isToday ? C.purple : C.muted, borderRight: i < 6 ? '1px solid ' + C.border : 'none', letterSpacing: '0.06em' }}>
+                    {d}
+                    <span style={{ fontSize: '16px', fontWeight: 600, display: 'block', color: isToday ? C.purple : C.text }}>{day.getDate()}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {filtered.map((emp, ei) => (
+              <div key={emp.id} style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, 1fr)', borderBottom: ei < filtered.length - 1 ? '1px solid ' + C.border : 'none' }}>
+                <div style={{ padding: '8px', borderRight: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: '8px', background: C.card }}>
+                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: AVATAR_COLORS[ei % AVATAR_COLORS.length] + '22', border: '1px solid ' + AVATAR_COLORS[ei % AVATAR_COLORS.length] + '44', color: AVATAR_COLORS[ei % AVATAR_COLORS.length], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 600, flexShrink: 0 }}>
+                    {initials(emp.first_name, emp.last_name)}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1.2 }}>{emp.first_name}<br />{emp.last_name}</div>
+                    <div style={{ fontSize: '9px', color: C.muted }}>{emp.role}</div>
+                  </div>
+                </div>
+
+                {DAYS.map((_, di) => {
+                  const date = fmtDate(addDays(mon, di));
+                  const key = emp.id + '-' + date;
+                  const shift = shifts[key];
+                  const shDef = shift ? SHIFTS.find(s => s.id === shift.shift_type) : null;
+                  return (
+                    <div key={di}
+                      style={{ padding: '3px', minHeight: '54px', borderRight: di < 6 ? '1px solid ' + C.border : 'none', cursor: 'pointer', background: hovered === key + 'c' ? C.border + '33' : 'transparent', position: 'relative' }}
+                      onClick={() => openModal(emp, di)}
+                      onMouseEnter={() => setHovered(key + 'c')}
+                      onMouseLeave={() => setHovered(null)}
+                      onDragOver={onDragOver}
+                      onDrop={e => onDrop(e, emp.id, di)}
+                    >
+                      {shift && shDef ? (
+                        <div
+                          draggable
+                          onDragStart={e => { e.stopPropagation(); onDragStart(e, key, shift); }}
+                          onMouseEnter={() => setHovered(key)}
+                          onMouseLeave={() => setHovered(key + 'c')}
+                          onClick={e => e.stopPropagation()}
+                          style={{ borderRadius: '5px', padding: '3px 6px', fontSize: '10px', fontWeight: 500, background: shDef.bg, border: '1px solid ' + shDef.border, color: shDef.text, cursor: 'grab', position: 'relative', lineHeight: 1.3 }}
+                        >
+                          {shDef.label}
+                          <div style={{ fontSize: '9px', opacity: 0.75 }}>{shift.start_time ? shift.start_time.slice(0, 5) : ''}–{shift.end_time ? shift.end_time.slice(0, 5) : ''}</div>
+                          <button
+                            onClick={e => deleteShift(e, shift.id, key)}
+                            style={{ position: 'absolute', top: '2px', right: '3px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', opacity: hovered === key ? 1 : 0, transition: 'opacity .15s', padding: '0 2px', fontFamily: 'inherit' }}
+                          >x</button>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '18px', color: C.border, textAlign: 'center', paddingTop: '8px', opacity: hovered === key + 'c' ? 1 : 0, lineHeight: 1 }}>+</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {modal === 'add' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setModal(null)}>
+          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '280px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>{form.empName}</div>
+            <div style={{ fontSize: '11px', color: C.muted, marginBottom: '14px' }}>{form.date}</div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>TYPE</label>
+              <select style={{ width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' }}
+                value={form.shiftId}
+                onChange={e => {
+                  const sh = SHIFTS.find(s => s.id === e.target.value);
+                  setForm(f => ({ ...f, shiftId: e.target.value, start: sh.start, end: sh.end }));
+                }}>
+                {SHIFTS.map(sh => <option key={sh.id} value={sh.id}>{sh.label} ({sh.start}-{sh.end})</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>DEBUT</label>
+                <input type="time" style={{ width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' }}
+                  value={form.start} onChange={e => setForm(f => ({ ...f, start: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>FIN</label>
+                <input type="time" style={{ width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' }}
+                  value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setModal(null)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
+              <button onClick={saveShift} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div style={{ position: 'fixed', bottom: '24px', right: '24px', background: C.card, border: '1px solid ' + C.green, borderRadius: '8px', padding: '10px 16px', fontSize: '12px', color: C.green, zIndex: 200 }}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}

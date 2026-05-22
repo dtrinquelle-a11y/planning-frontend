@@ -74,7 +74,9 @@ export default function Planning() {
       });
       setShifts(map);
     }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekOffset]);
+  
 
   const filtered = employees.filter(e => e.service === service);
 

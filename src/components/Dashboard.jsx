@@ -276,7 +276,7 @@ export default function Dashboard() {
   const totalHeures = modulation.reduce((s, m) => s + parseFloat(m.heures_travaillees || 0), 0);
   const enPoste = presence.filter(p => p.en_poste).length;
   const anomalies = modulation.filter(m => m.statut !== 'normal').length;
-  const maxH = Math.max(...modulation.map(m => parseFloat(m.heures_travaillees || 0)), 1);
+  
 
   const chartData = modulation.map((m, i) => ({
     name: m.last_name,

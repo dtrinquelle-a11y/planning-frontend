@@ -44,7 +44,7 @@ export default function EspaceSalarie() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [shifts, setShifts] = useState([]);
   const [modulation, setModulation] = useState(null);
-  const [echanges] = useState([]);
+  const [echanges, setEchanges] = useState([]); // eslint-disable-line no-unused-vars
   const [echangeModal, setEchangeModal] = useState(false);
   const [echangeForm, setEchangeForm] = useState({ shift_id: '', message: '' });
   const [toast, setToast] = useState('');

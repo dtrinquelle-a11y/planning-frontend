@@ -52,9 +52,13 @@ export default function Planning() {
   const [shifts, setShifts] = useState({});
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [dupDays, setDupDays] = useState([]);
   const [toast, setToast] = useState('');
   const [hovered, setHovered] = useState(null);
   const [dragSrc, setDragSrc] = useState(null);
+  const [copyModal, setCopyModal] = useState(false);
+  const [copyEmpId, setCopyEmpId] = useState('');
+  const [copyTargetOffset, setCopyTargetOffset] = useState(1);
   const toastTimer = useRef(null);
 
   const mon = getMonday(weekOffset);
@@ -74,9 +78,8 @@ export default function Planning() {
       });
       setShifts(map);
     }).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekOffset]);
-  
 
   const filtered = employees.filter(e => e.service === service);
 
@@ -94,40 +97,90 @@ export default function Planning() {
       empId: emp.id,
       empName: emp.first_name + ' ' + emp.last_name,
       date,
+      dayIdx,
       shiftId: sh.id,
       start: existing ? existing.start_time.slice(0, 5) : sh.start,
       end: existing ? existing.end_time.slice(0, 5) : sh.end,
       existingId: existing ? existing.id : null,
     });
+    setDupDays([]);
     setModal('add');
   }
 
   async function saveShift() {
     try {
+      let savedId = form.existingId;
       if (form.existingId) {
         await axios.patch(API + '/schedules/' + form.existingId, {
           start_time: form.start, end_time: form.end, shift_type: form.shiftId,
         });
       } else {
-        await axios.post(API + '/schedules', {
+        const r = await axios.post(API + '/schedules', {
           employee_id: form.empId, work_date: form.date,
           start_time: form.start, end_time: form.end,
           shift_type: form.shiftId, break_minutes: 0,
         });
+        savedId = r.data.id;
       }
-      setShifts(prev => ({
-        ...prev,
-        [form.empId + '-' + form.date]: {
-          employee_id: form.empId, work_date: form.date,
-          start_time: form.start, end_time: form.end,
-          shift_type: form.shiftId, id: form.existingId || Date.now(),
-        },
-      }));
+
+      const newShifts = { ...shifts };
+      newShifts[form.empId + '-' + form.date] = {
+        employee_id: form.empId, work_date: form.date,
+        start_time: form.start, end_time: form.end,
+        shift_type: form.shiftId, id: savedId,
+      };
+
+      for (const di of dupDays) {
+        if (di === form.dayIdx) continue;
+        const dupDate = fmtDate(addDays(mon, di));
+        const existing = shifts[form.empId + '-' + dupDate];
+        try {
+          if (existing) {
+            await axios.patch(API + '/schedules/' + existing.id, {
+              start_time: form.start, end_time: form.end, shift_type: form.shiftId,
+            });
+            newShifts[form.empId + '-' + dupDate] = { ...existing, start_time: form.start, end_time: form.end, shift_type: form.shiftId };
+          } else {
+            const r = await axios.post(API + '/schedules', {
+              employee_id: form.empId, work_date: dupDate,
+              start_time: form.start, end_time: form.end,
+              shift_type: form.shiftId, break_minutes: 0,
+            });
+            newShifts[form.empId + '-' + dupDate] = r.data;
+          }
+        } catch (err) { console.log('overlap', dupDate); }
+      }
+
+      setShifts(newShifts);
       setModal(null);
-      showToast('Creneau enregistre');
+      const count = dupDays.filter(d => d !== form.dayIdx).length;
+      showToast('Enregistre' + (count > 0 ? ' + ' + count + ' copie(s)' : ''));
     } catch (err) {
       showToast('Erreur : ' + (err.response?.data?.error || err.message));
     }
+  }
+
+  async function copyWeek() {
+    if (!copyEmpId) { showToast('Selectionne un salarie'); return; }
+    const targetMon = getMonday(copyTargetOffset);
+    const empShifts = Object.entries(shifts).filter(([k]) => k.startsWith(copyEmpId + '-'));
+    if (empShifts.length === 0) { showToast('Aucun creneau a copier'); return; }
+    let copied = 0;
+    for (const [key, shift] of empShifts) {
+      const srcDate = new Date(key.split('-').slice(1).join('-'));
+      const srcDay = (srcDate.getDay() + 6) % 7;
+      const destDate = fmtDate(addDays(targetMon, srcDay));
+      try {
+        await axios.post(API + '/schedules', {
+          employee_id: copyEmpId, work_date: destDate,
+          start_time: shift.start_time, end_time: shift.end_time,
+          shift_type: shift.shift_type, break_minutes: 0,
+        });
+        copied++;
+      } catch (err) { console.log('overlap', destDate); }
+    }
+    setCopyModal(false);
+    showToast(copied + ' creneau(x) copie(s) vers semaine ' + (copyTargetOffset > weekOffset ? '+' : '') + (copyTargetOffset - weekOffset));
   }
 
   async function deleteShift(e, shiftId, key) {
@@ -135,26 +188,22 @@ export default function Planning() {
     try {
       await axios.delete(API + '/schedules/' + shiftId);
       setShifts(prev => { const n = { ...prev }; delete n[key]; return n; });
-      showToast('Creneau supprime');
-    } catch {
-      showToast('Erreur suppression');
-    }
+      showToast('Supprime');
+    } catch { showToast('Erreur suppression'); }
   }
 
   async function publishWeek() {
     try {
       const r = await axios.post(API + '/schedules/publish', { week: fmtDate(mon) });
       showToast(r.data.published + ' creneau(x) publie(s)');
-    } catch {
-      showToast('Erreur publication');
-    }
+    } catch { showToast('Erreur publication'); }
   }
 
-  function onDragStart(e, key, shift) {
-    setDragSrc({ key, shift });
-    e.dataTransfer.effectAllowed = 'move';
+  function toggleDupDay(di) {
+    setDupDays(prev => prev.includes(di) ? prev.filter(d => d !== di) : [...prev, di]);
   }
 
+  function onDragStart(e, key, shift) { setDragSrc({ key, shift }); e.dataTransfer.effectAllowed = 'move'; }
   function onDragOver(e) { e.preventDefault(); }
 
   async function onDrop(e, empId, dayIdx) {
@@ -164,49 +213,45 @@ export default function Planning() {
     const newKey = empId + '-' + newDate;
     if (dragSrc.key === newKey) return;
     try {
-      await axios.patch(API + '/schedules/' + dragSrc.shift.id, { work_date: newDate });
+      await axios.patch(API + '/schedules/' + dragSrc.shift.id, { work_date: newDate, employee_id: empId });
       setShifts(prev => {
         const n = { ...prev };
         delete n[dragSrc.key];
         n[newKey] = { ...dragSrc.shift, work_date: newDate, employee_id: empId };
         return n;
       });
-      showToast('Creneau deplace');
-    } catch {
-      showToast('Erreur deplacement');
-    }
+      showToast('Deplace');
+    } catch { showToast('Erreur deplacement'); }
     setDragSrc(null);
   }
 
   const endMon = addDays(mon, 6);
   const weekLabel = mon.getDate() + ' ' + months[mon.getMonth()] + ' -> ' + endMon.getDate() + ' ' + months[endMon.getMonth()] + ' ' + endMon.getFullYear();
+  const inp = { width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' };
+  const lbl = { display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' };
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace" }}>
-
       <div style={{ borderBottom: '1px solid ' + C.border, padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.card, flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {SERVICES.map(sv => (
-            <button key={sv}
-              style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (service === sv ? C.purple : C.border), background: service === sv ? C.purple + '22' : 'none', color: service === sv ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', letterSpacing: '0.06em' }}
+            <button key={sv} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (service === sv ? C.purple : C.border), background: service === sv ? C.purple + '22' : 'none', color: service === sv ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}
               onClick={() => setService(sv)}>{sv}</button>
           ))}
         </div>
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.text, cursor: 'pointer', padding: '4px 10px', fontSize: '13px', fontFamily: 'inherit' }}>{'<'}</button>
           <span style={{ fontSize: '12px', minWidth: '200px', textAlign: 'center' }}>{weekLabel}</span>
           <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.text, cursor: 'pointer', padding: '4px 10px', fontSize: '13px', fontFamily: 'inherit' }}>{'>'}</button>
           <button onClick={() => setWeekOffset(0)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.muted, cursor: 'pointer', padding: '4px 10px', fontSize: '11px', fontFamily: 'inherit' }}>Auj.</button>
+          <button onClick={() => { setCopyEmpId(filtered[0]?.id || ''); setCopyTargetOffset(weekOffset + 1); setCopyModal(true); }} style={{ background: C.amber + '22', border: '1px solid ' + C.amber + '66', borderRadius: '6px', padding: '6px 14px', color: C.amber, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>Copier semaine</button>
           <button onClick={publishWeek} style={{ background: C.green, border: 'none', borderRadius: '6px', padding: '6px 14px', color: '#fff', cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>Publier</button>
         </div>
       </div>
 
       <div style={{ padding: '20px 24px' }}>
         {filtered.length === 0 ? (
-          <div style={{ color: C.muted, textAlign: 'center', padding: '60px', fontSize: '13px' }}>
-            Aucun salarie dans le service {service}
-          </div>
+          <div style={{ color: C.muted, textAlign: 'center', padding: '60px', fontSize: '13px' }}>Aucun salarie dans le service {service}</div>
         ) : (
           <div style={{ border: '1px solid ' + C.border, borderRadius: '10px', overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, 1fr)', background: C.card, borderBottom: '1px solid ' + C.border }}>
@@ -215,14 +260,12 @@ export default function Planning() {
                 const day = addDays(mon, i);
                 const isToday = day.getTime() === today.getTime();
                 return (
-                  <div key={i} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '10px', color: isToday ? C.purple : C.muted, borderRight: i < 6 ? '1px solid ' + C.border : 'none', letterSpacing: '0.06em' }}>
-                    {d}
-                    <span style={{ fontSize: '16px', fontWeight: 600, display: 'block', color: isToday ? C.purple : C.text }}>{day.getDate()}</span>
+                  <div key={i} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '10px', color: isToday ? C.purple : C.muted, borderRight: i < 6 ? '1px solid ' + C.border : 'none' }}>
+                    {d}<span style={{ fontSize: '16px', fontWeight: 600, display: 'block', color: isToday ? C.purple : C.text }}>{day.getDate()}</span>
                   </div>
                 );
               })}
             </div>
-
             {filtered.map((emp, ei) => (
               <div key={emp.id} style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, 1fr)', borderBottom: ei < filtered.length - 1 ? '1px solid ' + C.border : 'none' }}>
                 <div style={{ padding: '8px', borderRight: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: '8px', background: C.card }}>
@@ -234,7 +277,6 @@ export default function Planning() {
                     <div style={{ fontSize: '9px', color: C.muted }}>{emp.role}</div>
                   </div>
                 </div>
-
                 {DAYS.map((_, di) => {
                   const date = fmtDate(addDays(mon, di));
                   const key = emp.id + '-' + date;
@@ -242,7 +284,7 @@ export default function Planning() {
                   const shDef = shift ? SHIFTS.find(s => s.id === shift.shift_type) : null;
                   return (
                     <div key={di}
-                      style={{ padding: '3px', minHeight: '54px', borderRight: di < 6 ? '1px solid ' + C.border : 'none', cursor: 'pointer', background: hovered === key + 'c' ? C.border + '33' : 'transparent', position: 'relative' }}
+                      style={{ padding: '3px', minHeight: '54px', borderRight: di < 6 ? '1px solid ' + C.border : 'none', cursor: 'pointer', background: hovered === key + 'c' ? C.border + '33' : 'transparent' }}
                       onClick={() => openModal(emp, di)}
                       onMouseEnter={() => setHovered(key + 'c')}
                       onMouseLeave={() => setHovered(null)}
@@ -250,23 +292,17 @@ export default function Planning() {
                       onDrop={e => onDrop(e, emp.id, di)}
                     >
                       {shift && shDef ? (
-                        <div
-                          draggable
-                          onDragStart={e => { e.stopPropagation(); onDragStart(e, key, shift); }}
-                          onMouseEnter={() => setHovered(key)}
-                          onMouseLeave={() => setHovered(key + 'c')}
+                        <div draggable onDragStart={e => { e.stopPropagation(); onDragStart(e, key, shift); }}
+                          onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(key + 'c')}
                           onClick={e => e.stopPropagation()}
-                          style={{ borderRadius: '5px', padding: '3px 6px', fontSize: '10px', fontWeight: 500, background: shDef.bg, border: '1px solid ' + shDef.border, color: shDef.text, cursor: 'grab', position: 'relative', lineHeight: 1.3 }}
-                        >
+                          style={{ borderRadius: '5px', padding: '3px 6px', fontSize: '10px', fontWeight: 500, background: shDef.bg, border: '1px solid ' + shDef.border, color: shDef.text, cursor: 'grab', position: 'relative', lineHeight: 1.3 }}>
                           {shDef.label}
                           <div style={{ fontSize: '9px', opacity: 0.75 }}>{shift.start_time ? shift.start_time.slice(0, 5) : ''}–{shift.end_time ? shift.end_time.slice(0, 5) : ''}</div>
-                          <button
-                            onClick={e => deleteShift(e, shift.id, key)}
-                            style={{ position: 'absolute', top: '2px', right: '3px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', opacity: hovered === key ? 1 : 0, transition: 'opacity .15s', padding: '0 2px', fontFamily: 'inherit' }}
-                          >x</button>
+                          <button onClick={e => deleteShift(e, shift.id, key)}
+                            style={{ position: 'absolute', top: '2px', right: '3px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', opacity: hovered === key ? 1 : 0, transition: 'opacity .15s', padding: '0 2px', fontFamily: 'inherit' }}>x</button>
                         </div>
                       ) : (
-                        <div style={{ fontSize: '18px', color: C.border, textAlign: 'center', paddingTop: '8px', opacity: hovered === key + 'c' ? 1 : 0, lineHeight: 1 }}>+</div>
+                        <div style={{ fontSize: '18px', color: C.border, textAlign: 'center', paddingTop: '8px', opacity: hovered === key + 'c' ? 1 : 0 }}>+</div>
                       )}
                     </div>
                   );
@@ -279,38 +315,97 @@ export default function Planning() {
 
       {modal === 'add' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setModal(null)}>
-          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '280px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>{form.empName}</div>
+          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '300px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '2px' }}>{form.empName}</div>
             <div style={{ fontSize: '11px', color: C.muted, marginBottom: '14px' }}>{form.date}</div>
-
             <div style={{ marginBottom: '10px' }}>
-              <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>TYPE</label>
-              <select style={{ width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' }}
-                value={form.shiftId}
-                onChange={e => {
-                  const sh = SHIFTS.find(s => s.id === e.target.value);
-                  setForm(f => ({ ...f, shiftId: e.target.value, start: sh.start, end: sh.end }));
-                }}>
+              <label style={lbl}>TYPE</label>
+              <select style={inp} value={form.shiftId} onChange={e => {
+                const sh = SHIFTS.find(s => s.id === e.target.value);
+                setForm(f => ({ ...f, shiftId: e.target.value, start: sh.start, end: sh.end }));
+              }}>
                 {SHIFTS.map(sh => <option key={sh.id} value={sh.id}>{sh.label} ({sh.start}-{sh.end})</option>)}
               </select>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>DEBUT</label>
-                <input type="time" style={{ width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' }}
-                  value={form.start} onChange={e => setForm(f => ({ ...f, start: e.target.value }))} />
+                <label style={lbl}>DEBUT</label>
+                <input type="time" style={inp} value={form.start} onChange={e => setForm(f => ({ ...f, start: e.target.value }))} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>FIN</label>
-                <input type="time" style={{ width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit' }}
-                  value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} />
+                <label style={lbl}>FIN</label>
+                <input type="time" style={inp} value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ ...lbl, marginBottom: '8px' }}>DUPLIQUER SUR</label>
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                {DAYS.map((d, di) => {
+                  const isOrigin = di === form.dayIdx;
+                  const checked = isOrigin || dupDays.includes(di);
+                  return (
+                    <button key={di} onClick={() => !isOrigin && toggleDupDay(di)}
+                      style={{ padding: '4px 8px', borderRadius: '5px', fontSize: '10px', fontFamily: 'inherit', cursor: isOrigin ? 'default' : 'pointer', border: '1px solid ' + (checked ? C.purple : C.border), background: checked ? C.purple + '22' : 'none', color: checked ? C.purple : C.muted, opacity: isOrigin ? 0.5 : 1 }}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: '10px', color: C.muted, marginTop: '5px' }}>
+                {dupDays.filter(d => d !== form.dayIdx).length > 0 ? dupDays.filter(d => d !== form.dayIdx).length + ' jour(s) selectionne(s)' : 'Cliquer pour dupliquer'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setModal(null)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
+              <button onClick={saveShift} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {copyModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setCopyModal(false)}>
+          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '300px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '14px' }}>Copier la semaine</div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={lbl}>SALARIE</label>
+              <select style={inp} value={copyEmpId} onChange={e => setCopyEmpId(e.target.value)}>
+                <option value="">-- Choisir --</option>
+                {filtered.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={lbl}>SEMAINE DE DESTINATION</label>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                <button onClick={() => setCopyTargetOffset(weekOffset + 1)}
+                  style={{ flex: 1, padding: '6px', borderRadius: '6px', border: '1px solid ' + (copyTargetOffset === weekOffset + 1 ? C.purple : C.border), background: copyTargetOffset === weekOffset + 1 ? C.purple + '22' : 'none', color: copyTargetOffset === weekOffset + 1 ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
+                  Semaine suivante
+                </button>
+                <button onClick={() => setCopyTargetOffset(weekOffset + 2)}
+                  style={{ flex: 1, padding: '6px', borderRadius: '6px', border: '1px solid ' + (copyTargetOffset === weekOffset + 2 ? C.purple : C.border), background: copyTargetOffset === weekOffset + 2 ? C.purple + '22' : 'none', color: copyTargetOffset === weekOffset + 2 ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
+                  Dans 2 semaines
+                </button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ ...lbl, marginBottom: 0, whiteSpace: 'nowrap' }}>OU DANS</label>
+                <input type="number" min="1" max="52"
+                  value={copyTargetOffset - weekOffset}
+                  onChange={e => setCopyTargetOffset(weekOffset + parseInt(e.target.value || 1))}
+                  style={{ ...inp, width: '60px' }} />
+                <span style={{ fontSize: '11px', color: C.muted }}>semaine(s)</span>
+              </div>
+              <div style={{ fontSize: '10px', color: C.muted, marginTop: '6px' }}>
+                Destination : {(d => d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear())(getMonday(copyTargetOffset))}
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => setModal(null)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
-              <button onClick={saveShift} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Enregistrer</button>
+              <button onClick={() => setCopyModal(false)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
+              <button onClick={copyWeek} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Copier</button>
             </div>
           </div>
         </div>

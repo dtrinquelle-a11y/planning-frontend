@@ -4,6 +4,8 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Planning from './components/Planning';
 import EspaceSalarie from './components/EspaceSalarie';
+import Pointeuse from './components/Pointeuse';
+import QRCodePage from './components/QRCodePage';
 
 const supabase = createClient(
   'https://akulbjtaflucxkuwptjv.supabase.co',
@@ -76,14 +78,18 @@ export default function App() {
   const empName = profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : '';
 
   const navItems = isManager
-    ? [
-        { id: 'dashboard', label: 'Dashboard' },
-        { id: 'planning', label: 'Planning' },
-        { id: 'salarie', label: 'Espace Salarie' },
-      ]
-    : [
-        { id: 'salarie', label: 'Mon Planning' },
-      ];
+
+  ? [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'planning', label: 'Planning' },
+      { id: 'salarie', label: 'Espace Salarie' },
+      { id: 'qrcode', label: 'QR Codes' },
+      { id: 'pointage', label: 'Pointeuse' },
+    ]
+  : [
+      { id: 'salarie', label: 'Mon Planning' },
+      { id: 'pointage', label: 'Pointeuse' },
+    ];
 
   return (
     <div style={{ fontFamily: "'DM Mono','Courier New',monospace" }}>
@@ -104,6 +110,8 @@ export default function App() {
       {page === 'dashboard' && <Dashboard />}
       {page === 'planning' && <Planning />}
       {page === 'salarie' && <EspaceSalarie />}
+      {page === 'qrcode' && <QRCodePage />}
+{page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : ''} />}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import Planning from './components/Planning';
 import EspaceSalarie from './components/EspaceSalarie';
 import Pointeuse from './components/Pointeuse';
 import QRCodePage from './components/QRCodePage';
-import GED from './components/GED';
+import GED from './components/GED'; // eslint-disable-line no-unused-vars
 
 const supabase = createClient(
   'https://akulbjtaflucxkuwptjv.supabase.co',
@@ -115,6 +115,7 @@ export default function App() {
       {page === 'salarie' && <EspaceSalarie />}
       {page === 'qrcode' && <QRCodePage />}
 {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : ''} />}
+   {page === 'ged' && <GED isManager={isManager} />} 
     </div>
   );
 }

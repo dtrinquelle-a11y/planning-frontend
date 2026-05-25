@@ -112,7 +112,16 @@ export default function Pointeuse({ employeeId, employeeName }) {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace", padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-
+{geoStatus === 'far' && (
+  <div style={{ width: '100%', maxWidth: '400px', background: C.amber + '22', border: '1px solid ' + C.amber, borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', fontSize: '12px', color: C.amber }}>
+    Attention : vous etes hors du perimetre autorise ({distance}m du site). Le pointage sera signale comme anomalie.
+  </div>
+)}
+{geoStatus === 'denied' && (
+  <div style={{ width: '100%', maxWidth: '400px', background: C.amber + '22', border: '1px solid ' + C.amber, borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', fontSize: '12px', color: C.amber }}>
+    Geolocalisation non disponible. Le pointage sera enregistre sans verification de position.
+  </div>
+)}
       <div style={{ width: '100%', maxWidth: '400px', marginBottom: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.1em', marginBottom: '6px' }}>POINTEUSE · LE BOUT DU MONDE</div>
         <div style={{ fontSize: '28px', fontWeight: 600, letterSpacing: '-0.02em' }}>{timeStr}</div>

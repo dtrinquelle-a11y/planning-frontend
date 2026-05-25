@@ -31,9 +31,9 @@ export default function Pointeuse({ employeeId, employeeName }) {
   const toastTimer = useRef(null);
 
   // Coordonnées du site (à mettre à jour avec les vraies coords)
-  const SITE_LAT = 48.8566;
-  const SITE_LON = 2.3522;
-  const SITE_RADIUS = 500;
+const SITE_LAT = 43.37729;
+const SITE_LON = 2.074415;
+const SITE_RADIUS = 300;
 
   useEffect(() => {
     loadTodayLogs();

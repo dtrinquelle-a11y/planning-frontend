@@ -20,7 +20,6 @@ function getDistanceMeters(lat1, lon1, lat2, lon2) {
 }
 
 export default function Pointeuse({ employeeId, employeeName }) {
-  const [status, setStatus] = useState('idle');
   const [lastAction, setLastAction] = useState(null);
   const [geoStatus, setGeoStatus] = useState('unknown');
   const [position, setPosition] = useState(null);
@@ -30,14 +29,14 @@ export default function Pointeuse({ employeeId, employeeName }) {
   const [toast, setToast] = useState('');
   const toastTimer = useRef(null);
 
-  // Coordonnées du site (à mettre à jour avec les vraies coords)
-const SITE_LAT = 43.37729;
-const SITE_LON = 2.074415;
-const SITE_RADIUS = 300;
+  const SITE_LAT = 43.37729;
+  const SITE_LON = 2.074415;
+  const SITE_RADIUS = 300;
 
   useEffect(() => {
     loadTodayLogs();
     checkGeolocation();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function showToast(msg, color) {
@@ -82,10 +81,7 @@ const SITE_RADIUS = 300;
     if (loading) return;
     setLoading(true);
     try {
-      const body = {
-        employee_id: employeeId,
-        action,
-      };
+      const body = { employee_id: employeeId, action };
       if (position) {
         body.latitude = position.lat;
         body.longitude = position.lon;
@@ -93,15 +89,12 @@ const SITE_RADIUS = 300;
       }
       const r = await axios.post(API + '/timeclock/scan', body);
       setLastAction(action);
-      setStatus('success');
       showToast(r.data.message || (action === 'in' ? 'Arrivee enregistree' : 'Depart enregistre'));
       await loadTodayLogs();
     } catch (err) {
-      setStatus('error');
       showToast(err.response?.data?.error || 'Erreur de pointage', C.red);
     } finally {
       setLoading(false);
-      setTimeout(() => setStatus('idle'), 3000);
     }
   }
 
@@ -120,16 +113,14 @@ const SITE_RADIUS = 300;
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace", padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
-      {/* Header */}
       <div style={{ width: '100%', maxWidth: '400px', marginBottom: '24px', textAlign: 'center' }}>
-        <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.1em', marginBottom: '6px' }}>POINTEUSE</div>
+        <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.1em', marginBottom: '6px' }}>POINTEUSE · LE BOUT DU MONDE</div>
         <div style={{ fontSize: '28px', fontWeight: 600, letterSpacing: '-0.02em' }}>{timeStr}</div>
         <div style={{ fontSize: '12px', color: C.muted, marginTop: '4px' }}>
           {now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
         </div>
       </div>
 
-      {/* Carte salarié */}
       <div style={{ width: '100%', maxWidth: '400px', background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '14px' }}>
         <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: C.purple + '22', border: '1px solid ' + C.purple + '44', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 600, flexShrink: 0 }}>
           {employeeName ? employeeName.split(' ').map(n => n[0]).join('') : '?'}
@@ -142,7 +133,6 @@ const SITE_RADIUS = 300;
         </div>
       </div>
 
-      {/* Géolocalisation */}
       <div style={{ width: '100%', maxWidth: '400px', background: geoColor + '11', border: '1px solid ' + geoColor + '44', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: '12px', color: geoColor }}>{geoLabel}</div>
         <button onClick={checkGeolocation} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '5px', padding: '3px 8px', color: C.muted, cursor: 'pointer', fontSize: '10px', fontFamily: 'inherit' }}>
@@ -150,13 +140,12 @@ const SITE_RADIUS = 300;
         </button>
       </div>
 
-      {/* Boutons de pointage */}
       <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
         <button
           onClick={() => doPointage('in')}
           disabled={!canPointIn || loading}
           style={{ width: '100%', padding: '18px', borderRadius: '12px', border: 'none', background: canPointIn ? C.green : C.border, color: canPointIn ? '#fff' : C.muted, fontSize: '15px', fontWeight: 600, cursor: canPointIn ? 'pointer' : 'not-allowed', fontFamily: 'inherit', transition: 'all .2s', opacity: loading ? 0.7 : 1 }}>
-          {loading && canPointIn ? 'Enregistrement...' : 'Pointer l\'arrivee'}
+          {loading && canPointIn ? 'Enregistrement...' : "Pointer l'arrivee"}
         </button>
 
         <button
@@ -167,7 +156,6 @@ const SITE_RADIUS = 300;
         </button>
       </div>
 
-      {/* Historique du jour */}
       {todayLogs.length > 0 && (
         <div style={{ width: '100%', maxWidth: '400px' }}>
           <div style={{ fontSize: '10px', color: C.muted, letterSpacing: '0.1em', marginBottom: '10px' }}>HISTORIQUE DU JOUR</div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
+import GED from './components/GED';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const supabase = createClient(
@@ -151,7 +152,6 @@ export default function GED({ isManager }) {
   }
 
   const filtered = filterType === 'tous' ? documents : documents.filter(d => d.type === filterType);
-  const empIdx = employees.findIndex(e => e.id === selectedEmp?.id);
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace", padding: '24px' }}>

@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import axios from 'axios';
-import GED from './components/GED';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const supabase = createClient(
   'https://akulbjtaflucxkuwptjv.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg'
@@ -27,6 +24,7 @@ const DOC_TYPES = [
 const AVATAR_COLORS = ['#7C6FCD', '#2DB87A', '#F5A623', '#E85D5D', '#5B9BD5', '#F090D0'];
 
 function initials(f, l) { return (f?.[0] || '') + (l?.[0] || ''); }
+
 function formatSize(bytes) {
   if (!bytes) return '';
   if (bytes < 1024) return bytes + ' o';
@@ -51,10 +49,12 @@ export default function GED({ isManager }) {
 
   useEffect(() => {
     if (isManager) {
-      axios.get(API + '/employees').then(r => {
-        setEmployees(r.data);
-        if (r.data.length > 0) setSelectedEmp(r.data[0]);
-      }).catch(() => {});
+      supabase.from('employees').select('*').order('last_name').then(({ data }) => {
+        if (data && data.length > 0) {
+          setEmployees(data);
+          setSelectedEmp(data[0]);
+        }
+      });
     }
   }, [isManager]);
 
@@ -94,28 +94,21 @@ export default function GED({ isManager }) {
       const file = uploadForm.file;
       const ext = file.name.split('.').pop();
       const filePath = selectedEmp.id + '/' + Date.now() + '.' + ext;
-
       const { error: uploadError } = await supabase.storage
         .from('documents-rh')
         .upload(filePath, file, { contentType: file.type });
-
       if (uploadError) throw uploadError;
-
-      const { error: dbError } = await supabase
-        .from('documents')
-        .insert({
-          employee_id: selectedEmp.id,
-          type: uploadForm.type,
-          title: uploadForm.title,
-          file_path: filePath,
-          file_name: file.name,
-          file_size: file.size,
-          mime_type: file.type,
-          periode: uploadForm.periode || null,
-        });
-
+      const { error: dbError } = await supabase.from('documents').insert({
+        employee_id: selectedEmp.id,
+        type: uploadForm.type,
+        title: uploadForm.title,
+        file_path: filePath,
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type,
+        periode: uploadForm.periode || null,
+      });
       if (dbError) throw dbError;
-
       showToast('Document depose avec succes');
       setUploadModal(false);
       setUploadForm({ type: 'bulletin_paie', title: '', periode: '', file: null });
@@ -170,12 +163,10 @@ export default function GED({ isManager }) {
           )}
         </div>
 
-        {/* Sélecteur salarié (manager uniquement) */}
         {isManager && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
             {employees.map((emp, i) => (
-              <button key={emp.id}
-                onClick={() => setSelectedEmp(emp)}
+              <button key={emp.id} onClick={() => setSelectedEmp(emp)}
                 style={{ padding: '6px 12px', borderRadius: '20px', border: '1px solid ' + (selectedEmp?.id === emp.id ? C.purple : C.border), background: selectedEmp?.id === emp.id ? C.purple + '22' : 'none', color: selectedEmp?.id === emp.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: AVATAR_COLORS[i % AVATAR_COLORS.length] + '22', color: AVATAR_COLORS[i % AVATAR_COLORS.length], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 600 }}>
                   {initials(emp.first_name, emp.last_name)}
@@ -186,7 +177,6 @@ export default function GED({ isManager }) {
           </div>
         )}
 
-        {/* Filtres par type */}
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
           <button onClick={() => setFilterType('tous')}
             style={{ padding: '4px 12px', borderRadius: '20px', border: '1px solid ' + (filterType === 'tous' ? C.purple : C.border), background: filterType === 'tous' ? C.purple + '22' : 'none', color: filterType === 'tous' ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
@@ -204,7 +194,6 @@ export default function GED({ isManager }) {
           })}
         </div>
 
-        {/* Liste des documents */}
         {filtered.length === 0 ? (
           <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '40px', textAlign: 'center' }}>
             <div style={{ fontSize: '24px', marginBottom: '10px' }}>📂</div>
@@ -235,7 +224,7 @@ export default function GED({ isManager }) {
                     {isManager && (
                       <button onClick={() => handleDelete(doc)}
                         style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 10px', color: C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
-                        ✕
+                        x
                       </button>
                     )}
                   </div>
@@ -246,7 +235,6 @@ export default function GED({ isManager }) {
         )}
       </div>
 
-      {/* Modal upload */}
       {uploadModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }} onClick={() => setUploadModal(false)}>
           <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '360px' }} onClick={e => e.stopPropagation()}>

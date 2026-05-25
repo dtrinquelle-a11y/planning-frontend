@@ -101,6 +101,7 @@ export default function Planning() {
       shiftId: sh.id,
       start: existing ? existing.start_time.slice(0, 5) : sh.start,
       end: existing ? existing.end_time.slice(0, 5) : sh.end,
+      note: existing?.note || '',
       existingId: existing ? existing.id : null,
     });
     setDupDays([]);
@@ -112,13 +113,15 @@ export default function Planning() {
       let savedId = form.existingId;
       if (form.existingId) {
         await axios.patch(API + '/schedules/' + form.existingId, {
-          start_time: form.start, end_time: form.end, shift_type: form.shiftId,
+          start_time: form.start, end_time: form.end,
+          shift_type: form.shiftId, note: form.note || null,
         });
       } else {
         const r = await axios.post(API + '/schedules', {
           employee_id: form.empId, work_date: form.date,
           start_time: form.start, end_time: form.end,
           shift_type: form.shiftId, break_minutes: 0,
+          note: form.note || null,
         });
         savedId = r.data.id;
       }
@@ -127,7 +130,8 @@ export default function Planning() {
       newShifts[form.empId + '-' + form.date] = {
         employee_id: form.empId, work_date: form.date,
         start_time: form.start, end_time: form.end,
-        shift_type: form.shiftId, id: savedId,
+        shift_type: form.shiftId, note: form.note || null,
+        id: savedId,
       };
 
       for (const di of dupDays) {
@@ -137,14 +141,19 @@ export default function Planning() {
         try {
           if (existing) {
             await axios.patch(API + '/schedules/' + existing.id, {
-              start_time: form.start, end_time: form.end, shift_type: form.shiftId,
+              start_time: form.start, end_time: form.end,
+              shift_type: form.shiftId, note: form.note || null,
             });
-            newShifts[form.empId + '-' + dupDate] = { ...existing, start_time: form.start, end_time: form.end, shift_type: form.shiftId };
+            newShifts[form.empId + '-' + dupDate] = {
+              ...existing, start_time: form.start,
+              end_time: form.end, shift_type: form.shiftId, note: form.note || null,
+            };
           } else {
             const r = await axios.post(API + '/schedules', {
               employee_id: form.empId, work_date: dupDate,
               start_time: form.start, end_time: form.end,
               shift_type: form.shiftId, break_minutes: 0,
+              note: form.note || null,
             });
             newShifts[form.empId + '-' + dupDate] = r.data;
           }
@@ -158,6 +167,22 @@ export default function Planning() {
     } catch (err) {
       showToast('Erreur : ' + (err.response?.data?.error || err.message));
     }
+  }
+
+  async function deleteShift(e, shiftId, key) {
+    e.stopPropagation();
+    try {
+      await axios.delete(API + '/schedules/' + shiftId);
+      setShifts(prev => { const n = { ...prev }; delete n[key]; return n; });
+      showToast('Supprime');
+    } catch { showToast('Erreur suppression'); }
+  }
+
+  async function publishWeek() {
+    try {
+      const r = await axios.post(API + '/schedules/publish', { week: fmtDate(mon) });
+      showToast(r.data.published + ' creneau(x) publie(s)');
+    } catch { showToast('Erreur publication'); }
   }
 
   async function copyWeek() {
@@ -175,28 +200,13 @@ export default function Planning() {
           employee_id: copyEmpId, work_date: destDate,
           start_time: shift.start_time, end_time: shift.end_time,
           shift_type: shift.shift_type, break_minutes: 0,
+          note: shift.note || null,
         });
         copied++;
       } catch (err) { console.log('overlap', destDate); }
     }
     setCopyModal(false);
-    showToast(copied + ' creneau(x) copie(s) vers semaine ' + (copyTargetOffset > weekOffset ? '+' : '') + (copyTargetOffset - weekOffset));
-  }
-
-  async function deleteShift(e, shiftId, key) {
-    e.stopPropagation();
-    try {
-      await axios.delete(API + '/schedules/' + shiftId);
-      setShifts(prev => { const n = { ...prev }; delete n[key]; return n; });
-      showToast('Supprime');
-    } catch { showToast('Erreur suppression'); }
-  }
-
-  async function publishWeek() {
-    try {
-      const r = await axios.post(API + '/schedules/publish', { week: fmtDate(mon) });
-      showToast(r.data.published + ' creneau(x) publie(s)');
-    } catch { showToast('Erreur publication'); }
+    showToast(copied + ' creneau(x) copie(s)');
   }
 
   function toggleDupDay(di) {
@@ -266,6 +276,7 @@ export default function Planning() {
                 );
               })}
             </div>
+
             {filtered.map((emp, ei) => (
               <div key={emp.id} style={{ display: 'grid', gridTemplateColumns: '120px repeat(7, 1fr)', borderBottom: ei < filtered.length - 1 ? '1px solid ' + C.border : 'none' }}>
                 <div style={{ padding: '8px', borderRight: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: '8px', background: C.card }}>
@@ -277,6 +288,7 @@ export default function Planning() {
                     <div style={{ fontSize: '9px', color: C.muted }}>{emp.role}</div>
                   </div>
                 </div>
+
                 {DAYS.map((_, di) => {
                   const date = fmtDate(addDays(mon, di));
                   const key = emp.id + '-' + date;
@@ -284,7 +296,7 @@ export default function Planning() {
                   const shDef = shift ? SHIFTS.find(s => s.id === shift.shift_type) : null;
                   return (
                     <div key={di}
-                      style={{ padding: '3px', minHeight: '54px', borderRight: di < 6 ? '1px solid ' + C.border : 'none', cursor: 'pointer', background: hovered === key + 'c' ? C.border + '33' : 'transparent' }}
+                      style={{ padding: '3px', minHeight: '58px', borderRight: di < 6 ? '1px solid ' + C.border : 'none', cursor: 'pointer', background: hovered === key + 'c' ? C.border + '33' : 'transparent' }}
                       onClick={() => openModal(emp, di)}
                       onMouseEnter={() => setHovered(key + 'c')}
                       onMouseLeave={() => setHovered(null)}
@@ -298,6 +310,11 @@ export default function Planning() {
                           style={{ borderRadius: '5px', padding: '3px 6px', fontSize: '10px', fontWeight: 500, background: shDef.bg, border: '1px solid ' + shDef.border, color: shDef.text, cursor: 'grab', position: 'relative', lineHeight: 1.3 }}>
                           {shDef.label}
                           <div style={{ fontSize: '9px', opacity: 0.75 }}>{shift.start_time ? shift.start_time.slice(0, 5) : ''}–{shift.end_time ? shift.end_time.slice(0, 5) : ''}</div>
+                          {shift.note && (
+                            <div style={{ fontSize: '9px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                              {shift.note}
+                            </div>
+                          )}
                           <button onClick={e => deleteShift(e, shift.id, key)}
                             style={{ position: 'absolute', top: '2px', right: '3px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '10px', opacity: hovered === key ? 1 : 0, transition: 'opacity .15s', padding: '0 2px', fontFamily: 'inherit' }}>x</button>
                         </div>
@@ -313,11 +330,13 @@ export default function Planning() {
         )}
       </div>
 
+      {/* Modal ajout créneau */}
       {modal === 'add' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setModal(null)}>
           <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '300px' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '2px' }}>{form.empName}</div>
             <div style={{ fontSize: '11px', color: C.muted, marginBottom: '14px' }}>{form.date}</div>
+
             <div style={{ marginBottom: '10px' }}>
               <label style={lbl}>TYPE</label>
               <select style={inp} value={form.shiftId} onChange={e => {
@@ -327,7 +346,8 @@ export default function Planning() {
                 {SHIFTS.map(sh => <option key={sh.id} value={sh.id}>{sh.label} ({sh.start}-{sh.end})</option>)}
               </select>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
               <div>
                 <label style={lbl}>DEBUT</label>
                 <input type="time" style={inp} value={form.start} onChange={e => setForm(f => ({ ...f, start: e.target.value }))} />
@@ -337,6 +357,14 @@ export default function Planning() {
                 <input type="time" style={inp} value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} />
               </div>
             </div>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label style={lbl}>POSTE / NOTE (optionnel)</label>
+              <input style={inp} placeholder="Ex: Service bar, Plonge, Nettoyage MH..."
+                value={form.note || ''}
+                onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+            </div>
+
             <div style={{ marginBottom: '14px' }}>
               <label style={{ ...lbl, marginBottom: '8px' }}>DUPLIQUER SUR</label>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
@@ -355,6 +383,7 @@ export default function Planning() {
                 {dupDays.filter(d => d !== form.dayIdx).length > 0 ? dupDays.filter(d => d !== form.dayIdx).length + ' jour(s) selectionne(s)' : 'Cliquer pour dupliquer'}
               </div>
             </div>
+
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
               <button onClick={saveShift} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Enregistrer</button>
@@ -363,11 +392,11 @@ export default function Planning() {
         </div>
       )}
 
+      {/* Modal copie semaine */}
       {copyModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setCopyModal(false)}>
           <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '300px' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '14px' }}>Copier la semaine</div>
-
             <div style={{ marginBottom: '12px' }}>
               <label style={lbl}>SALARIE</label>
               <select style={inp} value={copyEmpId} onChange={e => setCopyEmpId(e.target.value)}>
@@ -377,7 +406,6 @@ export default function Planning() {
                 ))}
               </select>
             </div>
-
             <div style={{ marginBottom: '12px' }}>
               <label style={lbl}>SEMAINE DE DESTINATION</label>
               <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
@@ -402,7 +430,6 @@ export default function Planning() {
                 Destination : {(d => d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear())(getMonday(copyTargetOffset))}
               </div>
             </div>
-
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={() => setCopyModal(false)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
               <button onClick={copyWeek} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Copier</button>

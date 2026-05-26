@@ -35,7 +35,6 @@ function getMonday(offset) {
 function initials(f, l) { return (f?.[0] || '') + (l?.[0] || ''); }
 
 const inp = { width: '100%', background: '#0F1117', border: '1px solid #2A2D3A', borderRadius: '6px', padding: '8px 10px', color: '#E8E6DC', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box' };
-const lbl = { display: 'block', fontSize: '10px', color: '#6B6E82', letterSpacing: '0.08em', marginBottom: '4px' };
 
 export default function EspaceSalarie() {
   const [employees, setEmployees] = useState([]);
@@ -44,9 +43,6 @@ export default function EspaceSalarie() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [shifts, setShifts] = useState([]);
   const [modulation, setModulation] = useState(null);
-  const [echanges, setEchanges] = useState([]); // eslint-disable-line no-unused-vars
-  const [echangeModal, setEchangeModal] = useState(false);
-  const [echangeForm, setEchangeForm] = useState({ shift_id: '', message: '' });
   const [toast, setToast] = useState('');
 
   const mon = getMonday(weekOffset);
@@ -70,13 +66,10 @@ export default function EspaceSalarie() {
 
   useEffect(() => {
     if (!selectedEmp) return;
-    axios.get(API + '/timeclock/modulation/' + selectedEmp.id).then(r => setModulation(r.data)).catch(() => {});
+    axios.get(API + '/timeclock/modulation/' + selectedEmp.id)
+      .then(r => setModulation(r.data))
+      .catch(() => {});
   }, [selectedEmp]);
-
-  function showToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(''), 2500);
-  }
 
   function getShiftForDay(dayIdx) {
     const date = fmtDate(addDays(mon, dayIdx));
@@ -94,19 +87,13 @@ export default function EspaceSalarie() {
     return null;
   }
 
-  function calcHeuresWeek() {
+  function calcHeuresPlanifiees() {
     return shifts.reduce((total, s) => {
       if (!s.start_time || !s.end_time) return total;
       const [sh, sm] = s.start_time.slice(0, 5).split(':').map(Number);
       const [eh, em] = s.end_time.slice(0, 5).split(':').map(Number);
       return total + (eh * 60 + em - sh * 60 - sm) / 60;
     }, 0);
-  }
-
-  async function demanderEchange() {
-    showToast('Demande d\'echange envoyee au manager');
-    setEchangeModal(false);
-    setEchangeForm({ shift_id: '', message: '' });
   }
 
   if (!selectedEmp) return (
@@ -116,30 +103,33 @@ export default function EspaceSalarie() {
   );
 
   const nextShift = getNextShift();
-  const heuresWeek = calcHeuresWeek();
+  const heuresPlanifiees = calcHeuresPlanifiees();
+  const heuresRealisees = modulation ? parseFloat(modulation.heures_travaillees || 0) : 0;
+  const heuresPlanifieesAnnuelles = modulation ? parseFloat(modulation.heures_planifiees || 0) : 0;
   const empIdx = employees.findIndex(e => e.id === selectedEmp.id);
   const avatarColor = AVATAR_COLORS[empIdx % AVATAR_COLORS.length] || C.purple;
+
+  const modulationPct = modulation
+    ? Math.min((heuresRealisees / parseFloat(modulation.seuil_legal)) * 100, 100)
+    : 0;
+  const modulationColor = modulation?.statut === 'majoration_50' ? C.red
+    : modulation?.statut === 'majoration_25' ? C.amber : C.green;
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace" }}>
 
-      {/* Header */}
       <div style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ fontSize: '13px', fontWeight: 600 }}><span style={{ color: C.purple }}>▸</span> MON PLANNING</div>
           <select style={{ ...inp, width: 'auto', fontSize: '12px', padding: '5px 10px' }}
             value={selectedEmp.id}
-            onChange={e => {
-              const emp = employees.find(em => em.id === e.target.value);
-              setSelectedEmp(emp);
-            }}>
+            onChange={e => setSelectedEmp(employees.find(em => em.id === e.target.value))}>
             {employees.map(emp => (
               <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
             ))}
           </select>
         </div>
 
-        {/* Profil */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', background: C.bg, borderRadius: '10px', marginBottom: '14px' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarColor + '22', border: '1px solid ' + avatarColor + '44', color: avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 600, flexShrink: 0 }}>
             {initials(selectedEmp.first_name, selectedEmp.last_name)}
@@ -151,9 +141,8 @@ export default function EspaceSalarie() {
           </div>
         </div>
 
-        {/* Prochain creneau */}
         {nextShift && (
-          <div style={{ background: C.green + '11', border: '1px solid ' + C.green + '44', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ background: C.green + '11', border: '1px solid ' + C.green + '44', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
             <div style={{ fontSize: '20px', color: C.green }}>→</div>
             <div>
               <div style={{ fontSize: '10px', color: C.green, letterSpacing: '0.08em', marginBottom: '2px' }}>
@@ -162,17 +151,18 @@ export default function EspaceSalarie() {
               <div style={{ fontSize: '13px', fontWeight: 500, color: C.text }}>
                 {SHIFTS.find(s => s.id === nextShift.shift.shift_type)?.label || 'Creneau'} · {nextShift.shift.start_time?.slice(0, 5)} – {nextShift.shift.end_time?.slice(0, 5)}
               </div>
+              {nextShift.shift.note && (
+                <div style={{ fontSize: '11px', color: C.muted, fontStyle: 'italic', marginTop: '2px' }}>{nextShift.shift.note}</div>
+              )}
               <div style={{ fontSize: '10px', color: C.muted }}>{nextShift.date.getDate()} {months[nextShift.date.getMonth()]}</div>
             </div>
           </div>
         )}
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: '0', marginTop: '14px', borderBottom: '1px solid ' + C.border }}>
+        <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid ' + C.border }}>
           {[
             { id: 'planning', label: 'Planning' },
             { id: 'heures', label: 'Mes heures' },
-            { id: 'echanges', label: 'Echanges' },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === t.id ? C.purple : 'transparent'), color: tab === t.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', letterSpacing: '0.06em', fontWeight: tab === t.id ? 600 : 400 }}>
@@ -182,10 +172,8 @@ export default function EspaceSalarie() {
         </div>
       </div>
 
-      {/* Contenu */}
       <div style={{ padding: '16px 20px', maxWidth: '700px', margin: '0 auto' }}>
 
-        {/* TAB PLANNING */}
         {tab === 'planning' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
@@ -194,8 +182,8 @@ export default function EspaceSalarie() {
               <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.text, cursor: 'pointer', padding: '4px 10px', fontFamily: 'inherit' }}>{'>'}</button>
             </div>
 
-            <div style={{ fontSize: '11px', color: C.muted, marginBottom: '8px' }}>
-              {heuresWeek.toFixed(1)}h planifiees cette semaine
+            <div style={{ fontSize: '11px', color: C.muted, marginBottom: '10px' }}>
+              {heuresPlanifiees.toFixed(1)}h planifiees cette semaine
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -216,18 +204,11 @@ export default function EspaceSalarie() {
                           {shDef.label}
                         </div>
                         <div style={{ fontSize: '12px', color: C.text }}>{shift.start_time?.slice(0, 5)} – {shift.end_time?.slice(0, 5)}</div>
-                        {shift.is_published && (
-                          <div style={{ fontSize: '10px', color: C.green, marginTop: '2px' }}>Publie</div>
-                        )}
+                        {shift.note && <div style={{ fontSize: '11px', color: C.muted, fontStyle: 'italic', marginTop: '2px' }}>{shift.note}</div>}
+                        {shift.is_published && <div style={{ fontSize: '10px', color: C.green, marginTop: '2px' }}>Publie</div>}
                       </div>
                     ) : (
                       <div style={{ flex: 1, fontSize: '12px', color: C.border }}>Repos</div>
-                    )}
-                    {shift && (
-                      <button onClick={() => { setEchangeForm(f => ({ ...f, shift_id: shift.id })); setEchangeModal(true); }}
-                        style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '4px 10px', color: C.muted, cursor: 'pointer', fontSize: '10px', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                        Echanger
-                      </button>
                     )}
                   </div>
                 );
@@ -236,112 +217,69 @@ export default function EspaceSalarie() {
           </div>
         )}
 
-        {/* TAB HEURES */}
         {tab === 'heures' && (
           <div>
-            <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '14px' }}>MODULATION ANNUELLE · CC HPA</div>
+            <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '14px' }}>MES HEURES · CC HPA</div>
 
-            {modulation ? (
-              <div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-                  {[
-                    { label: 'Heures pointees', val: modulation.heures_travaillees + 'h', color: C.purple },
-                    { label: 'Seuil legal', val: modulation.seuil_legal + 'h', color: C.text },
-                    { label: 'Heures restantes', val: modulation.heures_restantes + 'h', color: parseFloat(modulation.heures_restantes) < 200 ? C.amber : C.green },
-                    { label: 'Statut', val: modulation.statut === 'normal' ? 'Normal' : modulation.statut === 'majoration_25' ? 'Maj. 25%' : 'Maj. 50%', color: modulation.statut === 'normal' ? C.green : modulation.statut === 'majoration_25' ? C.amber : C.red },
-                  ].map((item, i) => (
-                    <div key={i} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '12px 14px' }}>
-                      <div style={{ fontSize: '10px', color: C.muted, marginBottom: '4px' }}>{item.label}</div>
-                      <div style={{ fontSize: '20px', fontWeight: 600, color: item.color }}>{item.val}</div>
-                    </div>
-                  ))}
+            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '16px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '12px' }}>MODULATION ANNUELLE</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '32px', fontWeight: 600, color: modulationColor, lineHeight: 1 }}>
+                    {heuresRealisees.toFixed(1)}h
+                  </div>
+                  <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>realisees</div>
                 </div>
-
-                {/* Barre de progression */}
-                <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: C.muted, marginBottom: '8px' }}>
-                    <span>0h</span>
-                    <span>1607h (seuil)</span>
-                    <span>1790h</span>
-                  </div>
-                  <div style={{ height: '8px', background: C.border, borderRadius: '4px', overflow: 'hidden', marginBottom: '6px' }}>
-                    <div style={{ height: '8px', width: Math.min((parseFloat(modulation.heures_travaillees) / 1790) * 100, 100) + '%', background: modulation.statut === 'normal' ? C.green : modulation.statut === 'majoration_25' ? C.amber : C.red, borderRadius: '4px', transition: 'width 0.6s ease' }} />
-                  </div>
-                  <div style={{ fontSize: '11px', color: C.muted }}>
-                    Periode : {modulation.period_start?.slice(0, 10)} → {modulation.period_end?.slice(0, 10)}
-                  </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '16px', fontWeight: 500, color: C.muted }}>/ {modulation?.seuil_legal || 1607}h</div>
+                  <div style={{ fontSize: '10px', color: C.muted, marginTop: '2px' }}>seuil CC HPA</div>
                 </div>
               </div>
-            ) : (
-              <div style={{ color: C.muted, fontSize: '12px', textAlign: 'center', padding: '40px' }}>Aucune donnee de modulation</div>
-            )}
-
-            <div style={{ marginTop: '14px', background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '11px', color: C.muted, marginBottom: '10px', letterSpacing: '0.08em' }}>CETTE SEMAINE</div>
-              <div style={{ fontSize: '24px', fontWeight: 600, color: C.purple }}>{heuresWeek.toFixed(1)}h</div>
-              <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>planifiees sur {shifts.length} creneau(x)</div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB ECHANGES */}
-        {tab === 'echanges' && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em' }}>MES DEMANDES D'ECHANGE</div>
-              <button onClick={() => setEchangeModal(true)}
-                style={{ background: C.purple, border: 'none', borderRadius: '6px', padding: '6px 12px', color: '#fff', cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>
-                + Nouvelle demande
-              </button>
+              <div style={{ height: '8px', background: C.border, borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
+                <div style={{ height: '8px', width: modulationPct + '%', background: modulationColor, borderRadius: '4px', transition: 'width 0.6s ease' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: C.muted }}>
+                <span>0h</span>
+                <span style={{ color: modulationColor, fontWeight: 500 }}>
+                  {modulation?.statut === 'normal' ? 'Normal' : modulation?.statut === 'majoration_25' ? 'Majoration 25%' : 'Majoration 50%'}
+                </span>
+                <span>1607h</span>
+              </div>
+              <div style={{ fontSize: '10px', color: C.muted, marginTop: '8px', borderTop: '1px solid ' + C.border, paddingTop: '8px' }}>
+                Periode : {modulation?.period_start?.slice(0, 10)} → {modulation?.period_end?.slice(0, 10)}
+              </div>
             </div>
 
-            {echanges.length === 0 ? (
-              <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '30px', textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: C.muted, marginBottom: '8px' }}>Aucune demande d'echange en cours</div>
-                <div style={{ fontSize: '11px', color: C.border }}>Clique sur un creneau → "Echanger" ou sur "+ Nouvelle demande"</div>
+            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '16px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '14px' }}>REALISE VS PLANIFIE</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ textAlign: 'center', padding: '14px', background: C.green + '11', border: '1px solid ' + C.green + '22', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '26px', fontWeight: 600, color: C.green }}>{heuresRealisees.toFixed(1)}h</div>
+                  <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.06em' }}>REALISEES</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '14px', background: C.purple + '11', border: '1px solid ' + C.purple + '22', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '26px', fontWeight: 600, color: C.purple }}>{heuresPlanifieesAnnuelles.toFixed(1)}h</div>
+                  <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.06em' }}>PLANIFIEES</div>
+                </div>
               </div>
-            ) : echanges.map((e, i) => (
-              <div key={i} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '12px 14px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 500 }}>{e.label}</div>
-              </div>
-            ))}
+              {heuresPlanifieesAnnuelles > 0 && (
+                <div style={{ marginTop: '12px', fontSize: '12px', color: C.muted, textAlign: 'center' }}>
+                  {heuresRealisees > heuresPlanifieesAnnuelles
+                    ? <span style={{ color: C.amber }}>+{(heuresRealisees - heuresPlanifieesAnnuelles).toFixed(1)}h au-dessus du planifie</span>
+                    : <span style={{ color: C.muted }}>{(heuresPlanifieesAnnuelles - heuresRealisees).toFixed(1)}h restantes a planifier</span>
+                  }
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '16px' }}>
+              <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '10px' }}>CETTE SEMAINE</div>
+              <div style={{ fontSize: '24px', fontWeight: 600, color: C.purple }}>{heuresPlanifiees.toFixed(1)}h</div>
+              <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>planifiees · {shifts.length} creneau(x)</div>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Modal echange */}
-      {echangeModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }} onClick={() => setEchangeModal(false)}>
-          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '320px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '14px' }}>Demande d'echange</div>
-
-            <div style={{ marginBottom: '10px' }}>
-              <label style={lbl}>CRENEAU A ECHANGER</label>
-              <select style={inp} value={echangeForm.shift_id} onChange={e => setEchangeForm(f => ({ ...f, shift_id: e.target.value }))}>
-                <option value="">-- Choisir un creneau --</option>
-                {shifts.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.work_date?.slice(0, 10)} · {s.start_time?.slice(0, 5)}-{s.end_time?.slice(0, 5)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={lbl}>MESSAGE AU MANAGER</label>
-              <textarea style={{ ...inp, height: '80px', resize: 'vertical' }}
-                placeholder="Ex: Je ne peux pas travailler ce jour-la..."
-                value={echangeForm.message}
-                onChange={e => setEchangeForm(f => ({ ...f, message: e.target.value }))} />
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => setEchangeModal(false)} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
-              <button onClick={demanderEchange} style={{ flex: 1, background: C.purple, border: 'none', borderRadius: '6px', padding: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Envoyer</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {toast && (
         <div style={{ position: 'fixed', bottom: '24px', right: '24px', background: C.card, border: '1px solid ' + C.green, borderRadius: '8px', padding: '10px 16px', fontSize: '12px', color: C.green, zIndex: 200 }}>

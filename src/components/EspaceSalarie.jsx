@@ -43,7 +43,7 @@ export default function EspaceSalarie() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [shifts, setShifts] = useState([]);
   const [modulation, setModulation] = useState(null);
-const [toast] = useState(''); // eslint-disable-line no-unused-vars
+
 
   const mon = getMonday(weekOffset);
   const endMon = addDays(mon, 6);
@@ -281,11 +281,7 @@ const [toast] = useState(''); // eslint-disable-line no-unused-vars
         )}
       </div>
 
-      {toast && (
-        <div style={{ position: 'fixed', bottom: '24px', right: '24px', background: C.card, border: '1px solid ' + C.green, borderRadius: '8px', padding: '10px 16px', fontSize: '12px', color: C.green, zIndex: 200 }}>
-          {toast}
-        </div>
-      )}
+    
     </div>
   );
 }

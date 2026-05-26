@@ -43,7 +43,7 @@ export default function EspaceSalarie() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [shifts, setShifts] = useState([]);
   const [modulation, setModulation] = useState(null);
-  const [toast, setToast] = useState('');
+const [toast] = useState(''); // eslint-disable-line no-unused-vars
 
   const mon = getMonday(weekOffset);
   const endMon = addDays(mon, 6);

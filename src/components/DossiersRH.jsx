@@ -15,7 +15,7 @@ export default function DossiersRH() {
   const [employees, setEmployees] = useState([]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [responses, setResponses] = useState([]);
-  const [fields, setFields] = useState([]);
+  const [fields] = useState([]); // eslint-disable-line no-unused-vars
   const [documents, setDocuments] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);

@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { ThemeProvider, useTheme } from './ThemeContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Planning from './components/Planning';
@@ -15,20 +16,12 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg'
 );
 
-export default function App() {
+function AppInner() {
+  const { colors: C, darkMode, toggle } = useTheme();
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(null);
-  const [darkMode, setDarkMode] = useState(true);
-
-  const C = darkMode ? {
-    bg: '#0F1117', card: '#1A1D27', border: '#2A2D3A',
-    text: '#E8E6DC', muted: '#6B6E82', purple: '#7C6FCD',
-  } : {
-    bg: '#F8F9FB', card: '#FFFFFF', border: '#E2E5ED',
-    text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD',
-  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -45,30 +38,21 @@ export default function App() {
 
   async function loadProfile() {
     try {
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('*, employees(*)')
-        .single();
+      const { data } = await supabase.from('user_profiles').select('*, employees(*)').single();
       setProfile(data);
       setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
-    } catch (err) {
-      console.error('Erreur profil:', err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error('Erreur profil:', err); }
+    finally { setLoading(false); }
   }
 
   function handleLogin({ session, profile }) {
-    setSession(session);
-    setProfile(profile);
+    setSession(session); setProfile(profile);
     setPage(profile?.role === 'salarie' ? 'salarie' : 'dashboard');
   }
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    setSession(null);
-    setProfile(null);
-    setPage(null);
+    setSession(null); setProfile(null); setPage(null);
   }
 
   if (loading) return (
@@ -77,7 +61,7 @@ export default function App() {
     </div>
   );
 
-  if (!session) return <Login onLogin={handleLogin} darkMode={darkMode} />;
+  if (!session) return <Login onLogin={handleLogin} />;
 
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const empName = profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : '';
@@ -99,17 +83,16 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "'DM Mono','Courier New',monospace", background: C.bg, minHeight: '100vh' }}>
-      <nav style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <nav style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', boxShadow: C.shadow + ' 0 1px 4px' }}>
         <span style={{ color: C.purple, fontWeight: 600, marginRight: '16px', fontSize: '13px' }}>▸ PLANNING HPA</span>
         {navItems.map(p => (
-          <button key={p.id} onClick={() => setPage(p.id)} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (page === p.id ? C.purple : C.border), background: page === p.id ? C.purple + '22' : 'none', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'inherit' }}>
+          <button key={p.id} onClick={() => setPage(p.id)} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (page === p.id ? C.purple : C.border), background: page === p.id ? C.purpleLight : 'none', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'inherit', transition: 'all .15s' }}>
             {p.label}
           </button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '11px', color: C.muted }}>{empName} · {profile?.role}</span>
-          <button onClick={() => setDarkMode(d => !d)}
-            title={darkMode ? 'Passer en mode clair' : 'Passer en mode sombre'}
+          <button onClick={toggle} title={darkMode ? 'Mode clair' : 'Mode sombre'}
             style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '14px', fontFamily: 'inherit' }}>
             {darkMode ? '☀️' : '🌙'}
           </button>
@@ -118,13 +101,17 @@ export default function App() {
           </button>
         </div>
       </nav>
-      {page === 'dashboard' && <Dashboard darkMode={darkMode} />}
-      {page === 'planning' && <Planning darkMode={darkMode} />}
-      {page === 'timeline' && <Timeline darkMode={darkMode} />}
-      {page === 'salarie' && <EspaceSalarie darkMode={darkMode} />}
-      {page === 'qrcode' && <QRCodePage darkMode={darkMode} />}
-      {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : ''} darkMode={darkMode} />}
-      {page === 'ged' && <GED isManager={isManager} darkMode={darkMode} />}
+      {page === 'dashboard' && <Dashboard />}
+      {page === 'planning' && <Planning />}
+      {page === 'timeline' && <Timeline />}
+      {page === 'salarie' && <EspaceSalarie />}
+      {page === 'qrcode' && <QRCodePage />}
+      {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={empName} />}
+      {page === 'ged' && <GED isManager={isManager} />}
     </div>
   );
+}
+
+export default function App() {
+  return <ThemeProvider><AppInner /></ThemeProvider>;
 }

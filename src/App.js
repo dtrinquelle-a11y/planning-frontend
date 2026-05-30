@@ -114,7 +114,6 @@ export default function App() {
       {page === 'qrcode' && <QRCodePage />}
       {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : ''} />}
       {page === 'ged' && <GED isManager={isManager} />}
-      {page === 'ged' && <GED isManager={isManager} />}
       {page === 'timeline' && <Timeline />}
     </div>
   );

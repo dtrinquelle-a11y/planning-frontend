@@ -8,6 +8,7 @@ import EspaceSalarie from './components/EspaceSalarie';
 import Pointeuse from './components/Pointeuse';
 import QRCodePage from './components/QRCodePage';
 import GED from './components/GED';
+import Timeline from './components/Timeline';
 
 const supabase = createClient(
   'https://akulbjtaflucxkuwptjv.supabase.co',
@@ -84,7 +85,7 @@ export default function App() {
         { id: 'salarie', label: 'Espace Salarie' },
         { id: 'qrcode', label: 'QR Codes' },
         { id: 'pointage', label: 'Pointeuse' },
-        { id: 'ged', label: 'Documents' },
+        { id: 'timeline', label: 'Timeline' },
       ]
     : [
         { id: 'salarie', label: 'Mon Planning' },

@@ -10,6 +10,8 @@ import Pointeuse from './components/Pointeuse';
 import QRCodePage from './components/QRCodePage';
 import GED from './components/GED';
 import Timeline from './components/Timeline';
+import Onboarding from './components/Onboarding';
+import DossiersRH from './components/DossiersRH';
 
 const supabase = createClient(
   'https://akulbjtaflucxkuwptjv.supabase.co',
@@ -55,6 +57,9 @@ function AppInner() {
     setSession(null); setProfile(null); setPage(null);
   }
 
+  // Route publique onboarding — accessible sans connexion
+  if (window.location.pathname === '/onboarding') return <Onboarding />;
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", color: C.muted, fontSize: '13px' }}>
       Chargement...
@@ -75,6 +80,7 @@ function AppInner() {
         { id: 'qrcode', label: 'QR Codes' },
         { id: 'pointage', label: 'Pointeuse' },
         { id: 'ged', label: 'Documents' },
+        { id: 'dossiers', label: 'Dossiers RH' },
       ]
     : [
         { id: 'salarie', label: 'Mon Planning' },
@@ -108,6 +114,7 @@ function AppInner() {
       {page === 'qrcode' && <QRCodePage />}
       {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={empName} />}
       {page === 'ged' && <GED isManager={isManager} />}
+      {page === 'dossiers' && <DossiersRH />}
     </div>
   );
 }

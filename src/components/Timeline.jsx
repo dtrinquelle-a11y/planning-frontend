@@ -117,13 +117,6 @@ export default function Timeline() {
     return emp ? SERVICE_COLORS[emp.service] || C.purple : C.purple;
   }
 
-  function getEmpName(empId) {
-    const s = schedules.find(sc => sc.employee_id === empId);
-    if (s) return (s.first_name || '') + ' ' + (s.last_name || '');
-    const emp = employees.find(e => e.id === empId);
-    return emp ? emp.first_name + ' ' + emp.last_name : '';
-  }
-
   function getEmpService(empId) {
     const emp = employees.find(e => e.id === empId);
     return emp?.service || '';

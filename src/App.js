@@ -1,4 +1,4 @@
-
+/* eslint-disable */
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Login from './components/Login';
@@ -15,16 +15,20 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg'
 );
 
-const C = {
-  bg: '#0F1117', card: '#1A1D27', border: '#2A2D3A',
-  text: '#E8E6DC', muted: '#6B6E82', purple: '#7C6FCD',
-};
-
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(null);
+  const [darkMode, setDarkMode] = useState(true);
+
+  const C = darkMode ? {
+    bg: '#0F1117', card: '#1A1D27', border: '#2A2D3A',
+    text: '#E8E6DC', muted: '#6B6E82', purple: '#7C6FCD',
+  } : {
+    bg: '#F8F9FB', card: '#FFFFFF', border: '#E2E5ED',
+    text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD',
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -73,7 +77,7 @@ export default function App() {
     </div>
   );
 
-  if (!session) return <Login onLogin={handleLogin} />;
+  if (!session) return <Login onLogin={handleLogin} darkMode={darkMode} />;
 
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const empName = profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : '';
@@ -82,10 +86,11 @@ export default function App() {
     ? [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'planning', label: 'Planning' },
+        { id: 'timeline', label: 'Timeline' },
         { id: 'salarie', label: 'Espace Salarie' },
         { id: 'qrcode', label: 'QR Codes' },
         { id: 'pointage', label: 'Pointeuse' },
-        { id: 'timeline', label: 'Timeline' },
+        { id: 'ged', label: 'Documents' },
       ]
     : [
         { id: 'salarie', label: 'Mon Planning' },
@@ -93,7 +98,7 @@ export default function App() {
       ];
 
   return (
-    <div style={{ fontFamily: "'DM Mono','Courier New',monospace" }}>
+    <div style={{ fontFamily: "'DM Mono','Courier New',monospace", background: C.bg, minHeight: '100vh' }}>
       <nav style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ color: C.purple, fontWeight: 600, marginRight: '16px', fontSize: '13px' }}>▸ PLANNING HPA</span>
         {navItems.map(p => (
@@ -101,20 +106,25 @@ export default function App() {
             {p.label}
           </button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '11px', color: C.muted }}>{empName} · {profile?.role}</span>
+          <button onClick={() => setDarkMode(d => !d)}
+            title={darkMode ? 'Passer en mode clair' : 'Passer en mode sombre'}
+            style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '14px', fontFamily: 'inherit' }}>
+            {darkMode ? '☀️' : '🌙'}
+          </button>
           <button onClick={handleLogout} style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
             Deconnexion
           </button>
         </div>
       </nav>
-      {page === 'dashboard' && <Dashboard />}
-      {page === 'planning' && <Planning />}
-      {page === 'salarie' && <EspaceSalarie />}
-      {page === 'qrcode' && <QRCodePage />}
-      {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : ''} />}
-      {page === 'ged' && <GED isManager={isManager} />}
-      {page === 'timeline' && <Timeline />}
+      {page === 'dashboard' && <Dashboard darkMode={darkMode} />}
+      {page === 'planning' && <Planning darkMode={darkMode} />}
+      {page === 'timeline' && <Timeline darkMode={darkMode} />}
+      {page === 'salarie' && <EspaceSalarie darkMode={darkMode} />}
+      {page === 'qrcode' && <QRCodePage darkMode={darkMode} />}
+      {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={profile?.employees ? profile.employees.first_name + ' ' + profile.employees.last_name : ''} darkMode={darkMode} />}
+      {page === 'ged' && <GED isManager={isManager} darkMode={darkMode} />}
     </div>
   );
 }

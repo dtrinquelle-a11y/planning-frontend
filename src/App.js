@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import supabase from './supabase';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -13,38 +13,44 @@ import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
 
-const supabase = createClient(
-  'https://akulbjtaflucxkuwptjv.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg'
-);
-
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(null);
+  const isOnboarding = window.location.pathname === '/onboarding';
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    if (isOnboarding) { setLoading(false); return; }
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
-      if (session) loadProfile();
+      if (session) await loadProfile(session);
       else setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
-      if (!session) { setProfile(null); setLoading(false); }
+      if (session) await loadProfile(session);
+      else { setProfile(null); setLoading(false); }
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  async function loadProfile() {
+  async function loadProfile(session) {
     try {
-      const { data } = await supabase.from('user_profiles').select('*, employees(*)').single();
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*, employees(*)')
+        .eq('id', session.user.id)
+        .single();
+      if (error) throw error;
       setProfile(data);
       setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
-    } catch (err) { console.error('Erreur profil:', err); }
-    finally { setLoading(false); }
+    } catch (err) {
+      console.error('Erreur profil:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleLogin({ session, profile }) {
@@ -57,8 +63,8 @@ function AppInner() {
     setSession(null); setProfile(null); setPage(null);
   }
 
-  // Route publique onboarding — accessible sans connexion
-  if (window.location.pathname === '/onboarding') return <Onboarding />;
+  // Route publique onboarding
+  if (isOnboarding) return <Onboarding />;
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", color: C.muted, fontSize: '13px' }}>
@@ -92,7 +98,8 @@ function AppInner() {
       <nav style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', boxShadow: C.shadow + ' 0 1px 4px' }}>
         <span style={{ color: C.purple, fontWeight: 600, marginRight: '16px', fontSize: '13px' }}>▸ PLANNING HPA</span>
         {navItems.map(p => (
-          <button key={p.id} onClick={() => setPage(p.id)} style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (page === p.id ? C.purple : C.border), background: page === p.id ? C.purpleLight : 'none', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'inherit', transition: 'all .15s' }}>
+          <button key={p.id} onClick={() => setPage(p.id)}
+            style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (page === p.id ? C.purple : C.border), background: page === p.id ? C.purpleLight : 'none', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'inherit', transition: 'all .15s' }}>
             {p.label}
           </button>
         ))}
@@ -102,7 +109,8 @@ function AppInner() {
             style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '14px', fontFamily: 'inherit' }}>
             {darkMode ? '☀️' : '🌙'}
           </button>
-          <button onClick={handleLogout} style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
+          <button onClick={handleLogout}
+            style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
             Deconnexion
           </button>
         </div>

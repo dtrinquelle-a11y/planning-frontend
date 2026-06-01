@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
-
-const supabase = createClient(
-  'https://akulbjtaflucxkuwptjv.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg'
-);
-
-export { supabase };
 
 export default function Login({ onLogin }) {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -22,7 +15,7 @@ export default function Login({ onLogin }) {
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) throw authError;
-      const { data: profile } = await supabase.from('user_profiles').select('*, employees(*)').single();
+      const { data: profile } = await supabase.from('user_profiles').select('*, employees(*)').eq('id', data.user.id).single();
       onLogin({ session: data.session, profile });
     } catch (err) {
       setError('Email ou mot de passe incorrect');
@@ -40,7 +33,7 @@ export default function Login({ onLogin }) {
           </div>
           <div style={{ fontSize: '12px', color: C.muted }}>Hotellerie de Plein Air · IDCC 1631</div>
         </div>
-        <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '24px', boxShadow: C.shadow + ' 0 4px 16px' }}>
+        <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '24px', boxShadow: '0 4px 16px ' + C.shadow }}>
           <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '20px', color: C.text }}>Connexion</div>
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '12px' }}>
@@ -51,13 +44,9 @@ export default function Login({ onLogin }) {
               <label style={{ display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '5px' }}>MOT DE PASSE</label>
               <input type="password" style={inp} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
             </div>
-            {error && (
-              <div style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: C.red, marginBottom: '14px' }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: C.red, marginBottom: '14px' }}>{error}</div>}
             <button type="submit" disabled={loading}
-              style={{ width: '100%', background: loading ? C.border : C.purple, border: 'none', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', transition: 'background .15s' }}>
+              style={{ width: '100%', background: loading ? C.border : C.purple, border: 'none', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}>
               {loading ? 'Connexion...' : 'Se connecter'}
             </button>
           </form>

@@ -1,11 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 
-const supabase = createClient(
-  'https://akulbjtaflucxkuwptjv.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg'
-);
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
@@ -15,7 +11,7 @@ export default function DossiersRH() {
   const [employees, setEmployees] = useState([]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [responses, setResponses] = useState([]);
-  const [fields, setFields] = useState([]); // eslint-disable-line no-unused-vars
+  const [fields, setFields] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);

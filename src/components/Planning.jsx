@@ -50,7 +50,10 @@ export default function Planning() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekOffset]);
 
-  const filtered = employees.filter(e => e.service === service);
+  const filtered = employees.filter(e => 
+  e.service === service || 
+  (e.services_secondaires && e.services_secondaires.split(',').map(s => s.trim()).includes(service))
+);
   function showToast(msg) { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(()=>setToast(''),2500); }
 
   function openModal(emp, dayIdx) {

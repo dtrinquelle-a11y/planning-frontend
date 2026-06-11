@@ -22,6 +22,7 @@ function getMonday(offset) {
 function fmtDate(d) { const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function addDays(d, n) { const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 const months = ['jan','fev','mars','avr','mai','juin','juil','aout','sep','oct','nov','dec'];
+const monthsFull = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
 
 function calcHeuresEmp(empId, shifts) {
   return Object.entries(shifts)
@@ -40,6 +41,7 @@ export default function Planning() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [employees, setEmployees] = useState([]);
   const [shifts, setShifts] = useState({});
+  const [monthlySummary, setMonthlySummary] = useState({});
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [dupDays, setDupDays] = useState([]);
@@ -53,10 +55,19 @@ export default function Planning() {
   const mon = getMonday(weekOffset);
   const today = new Date(); today.setHours(0,0,0,0);
 
+  // Mois courant de la semaine affichée
+  const currentMonth = fmtDate(mon).slice(0, 7);
+  const currentMonthLabel = monthsFull[mon.getMonth()] + ' ' + mon.getFullYear();
+
   useEffect(() => { axios.get(API+'/employees').then(r=>setEmployees(r.data)).catch(()=>{}); }, []);
+
   useEffect(() => {
     axios.get(API+'/schedules?week='+fmtDate(mon)).then(r=>{
       const map={}; r.data.forEach(s=>{const dk=s.work_date?s.work_date.slice(0,10):'';map[s.employee_id+'-'+dk]=s;}); setShifts(map);
+    }).catch(()=>{});
+    // Charger le résumé mensuel
+    axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>{
+      setMonthlySummary(r.data);
     }).catch(()=>{});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekOffset]);
@@ -84,11 +95,13 @@ export default function Planning() {
       newShifts[form.empId+'-'+form.date]={employee_id:form.empId,work_date:form.date,start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null,id:savedId};
       for(const di of dupDays){if(di===form.dayIdx)continue;const dd=fmtDate(addDays(mon,di));const ex=shifts[form.empId+'-'+dd];try{if(ex){await axios.patch(API+'/schedules/'+ex.id,{start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null});newShifts[form.empId+'-'+dd]={...ex,start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null};}else{const r=await axios.post(API+'/schedules',{employee_id:form.empId,work_date:dd,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:0,note:form.note||null});newShifts[form.empId+'-'+dd]=r.data;}}catch(err){}}
       setShifts(newShifts); setModal(null);
+      // Rafraîchir le résumé mensuel
+      axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>setMonthlySummary(r.data)).catch(()=>{});
       showToast('Enregistre'+(dupDays.filter(d=>d!==form.dayIdx).length>0?' + '+dupDays.filter(d=>d!==form.dayIdx).length+' copie(s)':''));
     } catch(err){showToast('Erreur : '+(err.response?.data?.error||err.message));}
   }
 
-  async function deleteShift(e,shiftId,key){e.stopPropagation();try{await axios.delete(API+'/schedules/'+shiftId);setShifts(prev=>{const n={...prev};delete n[key];return n;});showToast('Supprime');}catch{showToast('Erreur');}}
+  async function deleteShift(e,shiftId,key){e.stopPropagation();try{await axios.delete(API+'/schedules/'+shiftId);setShifts(prev=>{const n={...prev};delete n[key];return n;});axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>setMonthlySummary(r.data)).catch(()=>{});showToast('Supprime');}catch{showToast('Erreur');}}
   async function publishWeek(){try{const r=await axios.post(API+'/schedules/publish',{week:fmtDate(mon)});showToast(r.data.published+' creneau(x) publie(s)');}catch{showToast('Erreur');}}
   async function copyWeek(){if(!copyEmpId){showToast('Selectionne un salarie');return;}const tm=getMonday(copyTargetOffset);const es=Object.entries(shifts).filter(([k])=>k.startsWith(copyEmpId+'-'));if(!es.length){showToast('Aucun creneau');return;}let cp=0;for(const[k,sh]of es){const sd=new Date(k.split('-').slice(1).join('-'));const di=(sd.getDay()+6)%7;const dd=fmtDate(addDays(tm,di));try{await axios.post(API+'/schedules',{employee_id:copyEmpId,work_date:dd,start_time:sh.start_time,end_time:sh.end_time,shift_type:sh.shift_type,break_minutes:0,note:sh.note||null});cp++;}catch{}}setCopyModal(false);showToast(cp+' creneau(x) copies');}
   function toggleDupDay(di){setDupDays(prev=>prev.includes(di)?prev.filter(d=>d!==di):[...prev,di]);}
@@ -101,7 +114,6 @@ export default function Planning() {
   const inp={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 8px',color:C.text,fontSize:'12px',fontFamily:'inherit'};
   const lbl={display:'block',fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'};
 
-  // Légende seuils CC HPA
   const legendItems = [
     { color: C.green, label: '≤ contrat' },
     { color: C.purple, label: '> contrat' },
@@ -144,8 +156,8 @@ export default function Planning() {
           <div style={{color:C.muted,textAlign:'center',padding:'60px',fontSize:'13px'}}>Aucun salarie dans le service {service}</div>
         ):(
           <div style={{border:'1px solid '+C.border,borderRadius:'10px',overflow:'hidden',boxShadow:'0 2px 8px '+C.shadow}}>
-            <div style={{display:'grid',gridTemplateColumns:'130px repeat(7, 1fr)',background:C.card,borderBottom:'1px solid '+C.border}}>
-              <div style={{padding:'8px',borderRight:'1px solid '+C.border}}></div>
+            <div style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',background:C.card,borderBottom:'1px solid '+C.border}}>
+              <div style={{padding:'8px',borderRight:'1px solid '+C.border,fontSize:'10px',color:C.muted}}>{currentMonthLabel}</div>
               {DAYS.map((d,i)=>{const day=addDays(mon,i);const isToday=day.getTime()===today.getTime();return(
                 <div key={i} style={{padding:'8px 4px',textAlign:'center',fontSize:'10px',color:isToday?C.purple:C.muted,borderRight:i<6?'1px solid '+C.border:'none'}}>
                   {d}<span style={{fontSize:'16px',fontWeight:600,display:'block',color:isToday?C.purple:C.text}}>{day.getDate()}</span>
@@ -158,34 +170,50 @@ export default function Planning() {
               const contractH = parseFloat(emp.contract_hours) || 35;
               const heuresColor = totalH > 48 ? C.red : totalH > 44 ? C.amber : totalH > contractH ? C.purple : C.green;
               const isMultiService = emp.service !== service;
+              const monthly = monthlySummary[emp.id] || { heures_planifiees: 0, heures_realisees: 0 };
 
               return(
-                <div key={emp.id} style={{display:'grid',gridTemplateColumns:'130px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none'}}>
-                  <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'center',gap:'8px',background:C.card}}>
-                    <div style={{position:'relative',flexShrink:0}}>
+                <div key={emp.id} style={{display:'grid',gridTemplateColumns:'150px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none'}}>
+                  <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:C.card}}>
+                    <div style={{position:'relative',flexShrink:0,marginTop:'2px'}}>
                       <div style={{width:'30px',height:'30px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length]+'22',border:'1px solid '+AVATAR_COLORS[ei%AVATAR_COLORS.length]+'44',color:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>
                         {initials(emp.first_name,emp.last_name)}
                       </div>
                       {isMultiService&&<div title={'Service principal : '+emp.service} style={{position:'absolute',bottom:'-2px',right:'-2px',width:'10px',height:'10px',borderRadius:'50%',background:C.amber,border:'1px solid '+C.card,fontSize:'6px',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>M</div>}
                     </div>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:'11px',fontWeight:500,lineHeight:1.2,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.first_name}<br/>{emp.last_name}</div>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:'11px',fontWeight:500,lineHeight:1.2,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
                       <div style={{fontSize:'9px',color:C.muted}}>{emp.role}</div>
+
+                      {/* Compteur hebdomadaire */}
                       {totalH > 0 ? (
-                        <div style={{fontSize:'9px',fontWeight:700,color:heuresColor,marginTop:'2px',display:'flex',alignItems:'center',gap:'3px'}}>
-                          <div style={{width:'6px',height:'6px',borderRadius:'50%',background:heuresColor,flexShrink:0}}/>
-                          {totalH.toFixed(1)}h / {contractH}h
+                        <div style={{fontSize:'9px',fontWeight:700,color:heuresColor,marginTop:'3px',display:'flex',alignItems:'center',gap:'3px'}}>
+                          <div style={{width:'5px',height:'5px',borderRadius:'50%',background:heuresColor,flexShrink:0}}/>
+                          Sem: {totalH.toFixed(1)}h / {contractH}h
                         </div>
                       ) : (
-                        <div style={{fontSize:'9px',color:C.border,marginTop:'2px'}}>{contractH}h contrat</div>
+                        <div style={{fontSize:'9px',color:C.border,marginTop:'3px'}}>Sem: 0h / {contractH}h</div>
                       )}
+
+                      {/* Compteurs mensuels */}
+                      <div style={{marginTop:'4px',padding:'3px 5px',background:C.bg,borderRadius:'4px',border:'1px solid '+C.border}}>
+                        <div style={{fontSize:'8px',color:C.muted,letterSpacing:'0.05em',marginBottom:'2px'}}>CE MOIS</div>
+                        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                          <div style={{fontSize:'9px',color:C.purple,fontWeight:600}}>
+                            📅 {monthly.heures_planifiees.toFixed(1)}h
+                          </div>
+                          <div style={{fontSize:'9px',color:C.green,fontWeight:600}}>
+                            ✓ {monthly.heures_realisees.toFixed(1)}h
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
                   {DAYS.map((_,di)=>{
                     const date=fmtDate(addDays(mon,di));const key=emp.id+'-'+date;const shift=shifts[key];const shDef=shift?SHIFTS.find(s=>s.id===shift.shift_type):null;
                     return(
-                      <div key={di} style={{padding:'3px',minHeight:'62px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:hovered===key+'c'?C.borderLight:'transparent'}}
+                      <div key={di} style={{padding:'3px',minHeight:'80px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:hovered===key+'c'?C.borderLight:'transparent'}}
                         onClick={()=>openModal(emp,di)} onMouseEnter={()=>setHovered(key+'c')} onMouseLeave={()=>setHovered(null)} onDragOver={onDragOver} onDrop={e=>onDrop(e,emp.id,di)}>
                         {shift&&shDef?(
                           <div draggable onDragStart={e=>{e.stopPropagation();onDragStart(e,key,shift);}} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(key+'c')} onClick={e=>e.stopPropagation()}
@@ -231,7 +259,6 @@ export default function Planning() {
                   <button key={di} onClick={()=>!isOrigin&&toggleDupDay(di)} style={{padding:'4px 8px',borderRadius:'5px',fontSize:'10px',fontFamily:'inherit',cursor:isOrigin?'default':'pointer',border:'1px solid '+(checked?C.purple:C.border),background:checked?C.purpleLight:'none',color:checked?C.purple:C.muted,opacity:isOrigin?0.5:1}}>{d}</button>
                 );})}
               </div>
-              <div style={{fontSize:'10px',color:C.muted,marginTop:'5px'}}>{dupDays.filter(d=>d!==form.dayIdx).length>0?dupDays.filter(d=>d!==form.dayIdx).length+' jour(s)':'Cliquer pour dupliquer'}</div>
             </div>
             <div style={{display:'flex',gap:'8px'}}>
               <button onClick={()=>setModal(null)} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>

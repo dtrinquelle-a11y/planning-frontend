@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useTheme } from '../ThemeContext';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
-const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration'];
+const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation'];
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const SHIFTS = [
   { id: 'matin', label: 'Matin', start: '07:00', end: '13:00', bg: '#EEF2FF', border: '#7C6FCD', text: '#4338CA' },

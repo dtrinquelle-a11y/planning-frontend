@@ -113,7 +113,7 @@ export default function EspaceSalarie() {
                         {shift.is_published&&<div style={{fontSize:'10px',color:C.green,marginTop:'2px'}}>Publie</div>}
                       </div>
                     ):(
-                      <div style={{flex:1,fontSize:'12px',color:C.muted}}>Repos</div>
+                      <div style={{flex:1,fontSize:'12px',color:C.muted}}>—</div>
                     )}
                   </div>
                 );

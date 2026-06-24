@@ -11,7 +11,7 @@ const SHIFTS = [
   { id: 'journee', label: 'Journee', start: '09:00', end: '17:00', bg: '#FFFBEB', border: '#F5A623', text: '#92400E' },
   { id: 'soir', label: 'Soir', start: '18:00', end: '23:30', bg: '#FEF2F2', border: '#E85D5D', text: '#991B1B' },
   { id: 'custom', label: 'Personnalise', start: '08:00', end: '16:00', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
-];
+  { id: 'repos', label: 'Repos', start: '00:00', end: '00:00', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },];
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 function initials(f, l) { return (f?.[0]||'')+(l?.[0]||''); }
 function getMonday(offset) {

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const SHIFTS = [
@@ -9,6 +11,7 @@ const SHIFTS = [
   { id: 'journee', label: 'Journee', bg: '#FFFBEB', border: '#F5A623', text: '#92400E' },
   { id: 'soir', label: 'Soir', bg: '#FEF2F2', border: '#E85D5D', text: '#991B1B' },
   { id: 'custom', label: 'Personnalise', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
+  { id: 'repos', label: 'Repos', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },
 ];
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const months = ['jan','fev','mars','avr','mai','juin','juil','aout','sep','oct','nov','dec'];
@@ -26,6 +29,8 @@ export default function EspaceSalarie() {
   const [weekOffset,setWeekOffset]=useState(0);
   const [shifts,setShifts]=useState([]);
   const [modulation,setModulation]=useState(null);
+  const [exportingPDF,setExportingPDF]=useState(false);
+  const planningRef = useRef(null);
   const mon=getMonday(weekOffset);
   const endMon=addDays(mon,6);
   const weekLabel=mon.getDate()+' '+months[mon.getMonth()]+' -> '+endMon.getDate()+' '+months[endMon.getMonth()];
@@ -37,8 +42,29 @@ export default function EspaceSalarie() {
   useEffect(()=>{if(!selectedEmp)return;axios.get(API+'/timeclock/modulation/'+selectedEmp.id).then(r=>setModulation(r.data)).catch(()=>{});},[selectedEmp]);
 
   function getShiftForDay(dayIdx){const date=fmtDate(addDays(mon,dayIdx));return shifts.find(s=>s.work_date&&s.work_date.slice(0,10)===date);}
-  function getNextShift(){const today=new Date();today.setHours(0,0,0,0);for(let i=0;i<14;i++){const d=addDays(today,i);const date=fmtDate(d);const found=shifts.find(s=>s.work_date&&s.work_date.slice(0,10)===date);if(found)return{shift:found,date:d,daysAway:i};}return null;}
-  function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time)return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);return t+(eh*60+em-sh*60-sm)/60;},0);}
+  function getNextShift(){const today=new Date();today.setHours(0,0,0,0);for(let i=0;i<14;i++){const d=addDays(today,i);const date=fmtDate(d);const found=shifts.find(s=>s.work_date&&s.work_date.slice(0,10)===date&&s.shift_type!=='repos');if(found)return{shift:found,date:d,daysAway:i};}return null;}
+  function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time||s.shift_type==='repos')return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);return t+(eh*60+em-sh*60-sm)/60;},0);}
+
+  async function exportPDF() {
+    if (!planningRef.current) return;
+    setExportingPDF(true);
+    try {
+      const canvas = await html2canvas(planningRef.current, {
+        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const ratio = pdfWidth / canvas.width * 10;
+      pdf.setFontSize(10);
+      pdf.setTextColor(100);
+      pdf.text('Planning de ' + (selectedEmp?.first_name||'') + ' ' + (selectedEmp?.last_name||'') + ' · ' + weekLabel, 14, 10);
+      pdf.text('Le Bout du Monde · ' + new Date().toLocaleDateString('fr-FR'), pdfWidth - 14, 10, { align: 'right' });
+      pdf.addImage(imgData, 'PNG', 14, 16, canvas.width * ratio / 10, canvas.height * ratio / 10);
+      pdf.save('planning-' + (selectedEmp?.first_name||'').toLowerCase() + '-' + fmtDate(mon) + '.pdf');
+    } catch (err) { console.error(err); }
+    finally { setExportingPDF(false); }
+  }
 
   if(!selectedEmp)return<div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',color:C.muted,fontFamily:'inherit'}}>Chargement...</div>;
 
@@ -90,13 +116,20 @@ export default function EspaceSalarie() {
       <div style={{padding:'16px 20px',maxWidth:'700px',margin:'0 auto'}}>
         {tab==='planning'&&(
           <div>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
-              <button onClick={()=>setWeekOffset(w=>w-1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontFamily:'inherit'}}>{'<'}</button>
-              <span style={{fontSize:'12px',color:C.muted}}>{weekLabel}</span>
-              <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontFamily:'inherit'}}>{'>'}</button>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <button onClick={()=>setWeekOffset(w=>w-1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontFamily:'inherit'}}>{'<'}</button>
+                <span style={{fontSize:'12px',color:C.muted}}>{weekLabel}</span>
+                <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontFamily:'inherit'}}>{'>'}</button>
+              </div>
+              <button onClick={exportPDF} disabled={exportingPDF}
+                style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 14px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>
+                {exportingPDF?'...':'↓ PDF'}
+              </button>
             </div>
             <div style={{fontSize:'11px',color:C.muted,marginBottom:'10px'}}>{heuresPlanifiees.toFixed(1)}h planifiees cette semaine</div>
-            <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+
+            <div ref={planningRef} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               {DAYS.map((d,di)=>{
                 const day=addDays(mon,di);const shift=getShiftForDay(di);const shDef=shift?SHIFTS.find(s=>s.id===shift.shift_type):null;const isToday=fmtDate(day)===fmtDate(new Date());
                 return(
@@ -108,12 +141,12 @@ export default function EspaceSalarie() {
                     {shift&&shDef?(
                       <div style={{flex:1}}>
                         <div style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,fontSize:'11px',fontWeight:500,marginBottom:'3px'}}>{shDef.label}</div>
-                        <div style={{fontSize:'12px',color:C.text}}>{shift.start_time?.slice(0,5)} – {shift.end_time?.slice(0,5)}</div>
+                        {shift.shift_type !== 'repos' && <div style={{fontSize:'12px',color:C.text}}>{shift.start_time?.slice(0,5)} – {shift.end_time?.slice(0,5)}</div>}
                         {shift.note&&<div style={{fontSize:'11px',color:C.muted,fontStyle:'italic',marginTop:'2px'}}>{shift.note}</div>}
                         {shift.is_published&&<div style={{fontSize:'10px',color:C.green,marginTop:'2px'}}>Publie</div>}
                       </div>
                     ):(
-                      <div style={{flex:1,fontSize:'12px',color:C.muted}}>—</div>
+                      <div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>
                     )}
                   </div>
                 );
@@ -134,26 +167,21 @@ export default function EspaceSalarie() {
               <div style={{display:'flex',justifyContent:'space-between',fontSize:'10px',color:C.muted}}>
                 <span>0h</span><span style={{color:modulationColor,fontWeight:500}}>{modulation?.statut==='normal'?'Normal':modulation?.statut==='majoration_25'?'Majoration 25%':'Majoration 50%'}</span><span>1607h</span>
               </div>
-              <div style={{fontSize:'10px',color:C.muted,marginTop:'8px',borderTop:'1px solid '+C.border,paddingTop:'8px'}}>Periode : {modulation?.period_start?.slice(0,10)} → {modulation?.period_end?.slice(0,10)}</div>
             </div>
-            <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'12px',boxShadow:C.shadow+' 0 2px 8px'}}>
-              <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'14px'}}>REALISE VS PLANIFIE</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
-                <div style={{textAlign:'center',padding:'14px',background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:'8px'}}>
-                  <div style={{fontSize:'26px',fontWeight:600,color:C.green}}>{heuresRealisees.toFixed(1)}h</div>
-                  <div style={{fontSize:'10px',color:C.muted,marginTop:'4px',letterSpacing:'0.06em'}}>REALISEES</div>
-                </div>
-                <div style={{textAlign:'center',padding:'14px',background:C.purpleLight,border:'1px solid '+C.purple+'44',borderRadius:'8px'}}>
-                  <div style={{fontSize:'26px',fontWeight:600,color:C.purple}}>{heuresPlanifieesAnnuelles.toFixed(1)}h</div>
-                  <div style={{fontSize:'10px',color:C.muted,marginTop:'4px',letterSpacing:'0.06em'}}>PLANIFIEES</div>
-                </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+              <div style={{textAlign:'center',padding:'14px',background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:'8px'}}>
+                <div style={{fontSize:'26px',fontWeight:600,color:C.green}}>{heuresRealisees.toFixed(1)}h</div>
+                <div style={{fontSize:'10px',color:C.muted,marginTop:'4px',letterSpacing:'0.06em'}}>REALISEES</div>
               </div>
-              {heuresPlanifieesAnnuelles>0&&<div style={{marginTop:'12px',fontSize:'12px',color:C.muted,textAlign:'center'}}>{heuresRealisees>heuresPlanifieesAnnuelles?<span style={{color:C.amber}}>+{(heuresRealisees-heuresPlanifieesAnnuelles).toFixed(1)}h au-dessus</span>:<span>{(heuresPlanifieesAnnuelles-heuresRealisees).toFixed(1)}h restantes</span>}</div>}
+              <div style={{textAlign:'center',padding:'14px',background:C.purpleLight,border:'1px solid '+C.purple+'44',borderRadius:'8px'}}>
+                <div style={{fontSize:'26px',fontWeight:600,color:C.purple}}>{heuresPlanifieesAnnuelles.toFixed(1)}h</div>
+                <div style={{fontSize:'10px',color:C.muted,marginTop:'4px',letterSpacing:'0.06em'}}>PLANIFIEES</div>
+              </div>
             </div>
             <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',boxShadow:C.shadow+' 0 2px 8px'}}>
               <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'10px'}}>CETTE SEMAINE</div>
               <div style={{fontSize:'24px',fontWeight:600,color:C.purple}}>{heuresPlanifiees.toFixed(1)}h</div>
-              <div style={{fontSize:'11px',color:C.muted,marginTop:'4px'}}>planifiees · {shifts.length} creneau(x)</div>
+              <div style={{fontSize:'11px',color:C.muted,marginTop:'4px'}}>planifiees · {shifts.filter(s=>s.shift_type!=='repos').length} creneau(x)</div>
             </div>
           </div>
         )}

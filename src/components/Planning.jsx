@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation'];
@@ -11,7 +13,8 @@ const SHIFTS = [
   { id: 'journee', label: 'Journee', start: '09:00', end: '17:00', bg: '#FFFBEB', border: '#F5A623', text: '#92400E' },
   { id: 'soir', label: 'Soir', start: '18:00', end: '23:30', bg: '#FEF2F2', border: '#E85D5D', text: '#991B1B' },
   { id: 'custom', label: 'Personnalise', start: '08:00', end: '16:00', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
-  { id: 'repos', label: 'Repos', start: '00:00', end: '00:00', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },];
+  { id: 'repos', label: 'Repos', start: '00:00', end: '00:00', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },
+];
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 function initials(f, l) { return (f?.[0]||'')+(l?.[0]||''); }
 function getMonday(offset) {
@@ -28,7 +31,7 @@ function calcHeuresEmp(empId, shifts) {
   return Object.entries(shifts)
     .filter(([k]) => k.startsWith(empId + '-'))
     .reduce((acc, [, s]) => {
-      if (!s.start_time || !s.end_time) return acc;
+      if (!s.start_time || !s.end_time || s.shift_type === 'repos') return acc;
       const [sh, sm] = s.start_time.slice(0,5).split(':').map(Number);
       const [eh, em] = s.end_time.slice(0,5).split(':').map(Number);
       return acc + (eh*60+em - sh*60-sm) / 60;
@@ -51,21 +54,19 @@ export default function Planning() {
   const [copyModal, setCopyModal] = useState(false);
   const [copyEmpId, setCopyEmpId] = useState('');
   const [copyTargetOffset, setCopyTargetOffset] = useState(1);
+  const [exportingPDF, setExportingPDF] = useState(false);
   const toastTimer = useRef(null);
+  const planningRef = useRef(null);
   const mon = getMonday(weekOffset);
   const today = new Date(); today.setHours(0,0,0,0);
-
-  // Mois courant de la semaine affichée
   const currentMonth = fmtDate(mon).slice(0, 7);
   const currentMonthLabel = monthsFull[mon.getMonth()] + ' ' + mon.getFullYear();
 
   useEffect(() => { axios.get(API+'/employees').then(r=>setEmployees(r.data)).catch(()=>{}); }, []);
-
   useEffect(() => {
     axios.get(API+'/schedules?week='+fmtDate(mon)).then(r=>{
       const map={}; r.data.forEach(s=>{const dk=s.work_date?s.work_date.slice(0,10):'';map[s.employee_id+'-'+dk]=s;}); setShifts(map);
     }).catch(()=>{});
-    // Charger le résumé mensuel
     axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>{
       setMonthlySummary(r.data);
     }).catch(()=>{});
@@ -78,6 +79,43 @@ export default function Planning() {
   );
 
   function showToast(msg) { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current=setTimeout(()=>setToast(''),2500); }
+
+  async function exportPDF() {
+    if (!planningRef.current) return;
+    setExportingPDF(true);
+    showToast('Generation du PDF...');
+    try {
+      const canvas = await html2canvas(planningRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight) * 10;
+      const x = (pdfWidth - imgWidth * ratio / 10) / 2;
+      pdf.addImage(imgData, 'PNG', x, 10, imgWidth * ratio / 10, imgHeight * ratio / 10);
+
+      // En-tête
+      pdf.setFontSize(10);
+      pdf.setTextColor(100);
+      pdf.text('Planning ' + service + ' · ' + weekLabel, 14, 7);
+      pdf.text('Le Bout du Monde · Imprime le ' + new Date().toLocaleDateString('fr-FR'), pdfWidth - 14, 7, { align: 'right' });
+
+      pdf.save('planning-' + service.toLowerCase() + '-' + fmtDate(mon) + '.pdf');
+      showToast('PDF telecharge !');
+    } catch (err) {
+      showToast('Erreur PDF');
+      console.error(err);
+    } finally {
+      setExportingPDF(false);
+    }
+  }
 
   function openModal(emp, dayIdx) {
     const date=fmtDate(addDays(mon,dayIdx)); const existing=shifts[emp.id+'-'+date];
@@ -95,7 +133,6 @@ export default function Planning() {
       newShifts[form.empId+'-'+form.date]={employee_id:form.empId,work_date:form.date,start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null,id:savedId};
       for(const di of dupDays){if(di===form.dayIdx)continue;const dd=fmtDate(addDays(mon,di));const ex=shifts[form.empId+'-'+dd];try{if(ex){await axios.patch(API+'/schedules/'+ex.id,{start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null});newShifts[form.empId+'-'+dd]={...ex,start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null};}else{const r=await axios.post(API+'/schedules',{employee_id:form.empId,work_date:dd,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:0,note:form.note||null});newShifts[form.empId+'-'+dd]=r.data;}}catch(err){}}
       setShifts(newShifts); setModal(null);
-      // Rafraîchir le résumé mensuel
       axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>setMonthlySummary(r.data)).catch(()=>{});
       showToast('Enregistre'+(dupDays.filter(d=>d!==form.dayIdx).length>0?' + '+dupDays.filter(d=>d!==form.dayIdx).length+' copie(s)':''));
     } catch(err){showToast('Erreur : '+(err.response?.data?.error||err.message));}
@@ -135,11 +172,13 @@ export default function Planning() {
           <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontSize:'13px',fontFamily:'inherit'}}>{'>'}</button>
           <button onClick={()=>setWeekOffset(0)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.muted,cursor:'pointer',padding:'4px 10px',fontSize:'11px',fontFamily:'inherit'}}>Auj.</button>
           <button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
+          <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 14px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>
+            {exportingPDF ? '...' : '↓ PDF'}
+          </button>
           <button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>
         </div>
       </div>
 
-      {/* Légende seuils */}
       <div style={{padding:'8px 24px',background:C.card,borderBottom:'1px solid '+C.border,display:'flex',gap:'16px',alignItems:'center',flexWrap:'wrap'}}>
         <span style={{fontSize:'10px',color:C.muted,letterSpacing:'0.08em'}}>SEUILS CC HPA :</span>
         {legendItems.map(item=>(
@@ -148,19 +187,25 @@ export default function Planning() {
             {item.label}
           </div>
         ))}
-        <span style={{fontSize:'10px',color:C.muted,marginLeft:'auto'}}>Contrat individuel · Max légal 48h/sem</span>
+        <span style={{fontSize:'10px',color:C.muted,marginLeft:'auto'}}>Max légal 48h/sem</span>
       </div>
 
       <div style={{padding:'20px 24px'}}>
         {filtered.length===0?(
           <div style={{color:C.muted,textAlign:'center',padding:'60px',fontSize:'13px'}}>Aucun salarie dans le service {service}</div>
         ):(
-          <div style={{border:'1px solid '+C.border,borderRadius:'10px',overflow:'hidden',boxShadow:'0 2px 8px '+C.shadow}}>
-            <div style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',background:C.card,borderBottom:'1px solid '+C.border}}>
-              <div style={{padding:'8px',borderRight:'1px solid '+C.border,fontSize:'10px',color:C.muted}}>{currentMonthLabel}</div>
+          <div ref={planningRef} style={{border:'1px solid '+C.border,borderRadius:'10px',overflow:'hidden',boxShadow:'0 2px 8px '+C.shadow,background:'#fff'}}>
+            {/* En-tête PDF */}
+            <div style={{padding:'10px 16px',background:'#f8f9ff',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{fontSize:'13px',fontWeight:600,color:'#1A1D27'}}>Planning {service} · {weekLabel}</div>
+              <div style={{fontSize:'11px',color:'#6B7280'}}>{currentMonthLabel} · Le Bout du Monde</div>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',background:'#f8f9ff',borderBottom:'1px solid '+C.border}}>
+              <div style={{padding:'8px',borderRight:'1px solid '+C.border,fontSize:'10px',color:'#6B7280'}}>{currentMonthLabel}</div>
               {DAYS.map((d,i)=>{const day=addDays(mon,i);const isToday=day.getTime()===today.getTime();return(
-                <div key={i} style={{padding:'8px 4px',textAlign:'center',fontSize:'10px',color:isToday?C.purple:C.muted,borderRight:i<6?'1px solid '+C.border:'none'}}>
-                  {d}<span style={{fontSize:'16px',fontWeight:600,display:'block',color:isToday?C.purple:C.text}}>{day.getDate()}</span>
+                <div key={i} style={{padding:'8px 4px',textAlign:'center',fontSize:'10px',color:isToday?'#6C5FCD':'#6B7280',borderRight:i<6?'1px solid '+C.border:'none',background:isToday?'#EEF2FF':'transparent'}}>
+                  {d}<span style={{fontSize:'16px',fontWeight:600,display:'block',color:isToday?'#6C5FCD':'#1A1D27'}}>{day.getDate()}</span>
                 </div>
               );})}
             </div>
@@ -168,43 +213,35 @@ export default function Planning() {
             {filtered.map((emp,ei)=>{
               const totalH = calcHeuresEmp(emp.id, shifts);
               const contractH = parseFloat(emp.contract_hours) || 35;
-              const heuresColor = totalH > 48 ? C.red : totalH > 44 ? C.amber : totalH > contractH ? C.purple : C.green;
+              const heuresColor = totalH > 48 ? '#DC2626' : totalH > 44 ? '#D97706' : totalH > contractH ? '#6C5FCD' : '#16A34A';
               const isMultiService = emp.service !== service;
               const monthly = monthlySummary[emp.id] || { heures_planifiees: 0, heures_realisees: 0 };
 
               return(
-                <div key={emp.id} style={{display:'grid',gridTemplateColumns:'150px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none'}}>
-                  <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:C.card}}>
+                <div key={emp.id} style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none'}}>
+                  <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:'#fff'}}>
                     <div style={{position:'relative',flexShrink:0,marginTop:'2px'}}>
                       <div style={{width:'30px',height:'30px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length]+'22',border:'1px solid '+AVATAR_COLORS[ei%AVATAR_COLORS.length]+'44',color:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>
                         {initials(emp.first_name,emp.last_name)}
                       </div>
-                      {isMultiService&&<div title={'Service principal : '+emp.service} style={{position:'absolute',bottom:'-2px',right:'-2px',width:'10px',height:'10px',borderRadius:'50%',background:C.amber,border:'1px solid '+C.card,fontSize:'6px',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>M</div>}
+                      {isMultiService&&<div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'10px',height:'10px',borderRadius:'50%',background:'#D97706',border:'1px solid #fff',fontSize:'6px',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>M</div>}
                     </div>
                     <div style={{minWidth:0,flex:1}}>
-                      <div style={{fontSize:'11px',fontWeight:500,lineHeight:1.2,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
-                      <div style={{fontSize:'9px',color:C.muted}}>{emp.role}</div>
-
-                      {/* Compteur hebdomadaire */}
+                      <div style={{fontSize:'11px',fontWeight:500,lineHeight:1.2,color:'#1A1D27',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
+                      <div style={{fontSize:'9px',color:'#6B7280'}}>{emp.role}</div>
                       {totalH > 0 ? (
                         <div style={{fontSize:'9px',fontWeight:700,color:heuresColor,marginTop:'3px',display:'flex',alignItems:'center',gap:'3px'}}>
                           <div style={{width:'5px',height:'5px',borderRadius:'50%',background:heuresColor,flexShrink:0}}/>
                           Sem: {totalH.toFixed(1)}h / {contractH}h
                         </div>
                       ) : (
-                        <div style={{fontSize:'9px',color:C.border,marginTop:'3px'}}>Sem: 0h / {contractH}h</div>
+                        <div style={{fontSize:'9px',color:'#E5E7EB',marginTop:'3px'}}>Sem: 0h / {contractH}h</div>
                       )}
-
-                      {/* Compteurs mensuels */}
-                      <div style={{marginTop:'4px',padding:'3px 5px',background:C.bg,borderRadius:'4px',border:'1px solid '+C.border}}>
-                        <div style={{fontSize:'8px',color:C.muted,letterSpacing:'0.05em',marginBottom:'2px'}}>CE MOIS</div>
-                        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-                          <div style={{fontSize:'9px',color:C.purple,fontWeight:600}}>
-                            📅 {monthly.heures_planifiees.toFixed(1)}h
-                          </div>
-                          <div style={{fontSize:'9px',color:C.green,fontWeight:600}}>
-                            ✓ {monthly.heures_realisees.toFixed(1)}h
-                          </div>
+                      <div style={{marginTop:'4px',padding:'3px 5px',background:'#F4F6FA',borderRadius:'4px',border:'1px solid #E2E5ED'}}>
+                        <div style={{fontSize:'8px',color:'#6B7280',letterSpacing:'0.05em',marginBottom:'2px'}}>CE MOIS</div>
+                        <div style={{display:'flex',gap:'6px'}}>
+                          <div style={{fontSize:'9px',color:'#6C5FCD',fontWeight:600}}>📅 {monthly.heures_planifiees.toFixed(1)}h</div>
+                          <div style={{fontSize:'9px',color:'#16A34A',fontWeight:600}}>✓ {monthly.heures_realisees.toFixed(1)}h</div>
                         </div>
                       </div>
                     </div>
@@ -219,7 +256,7 @@ export default function Planning() {
                           <div draggable onDragStart={e=>{e.stopPropagation();onDragStart(e,key,shift);}} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(key+'c')} onClick={e=>e.stopPropagation()}
                             style={{borderRadius:'5px',padding:'3px 6px',fontSize:'10px',fontWeight:500,background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,cursor:'grab',position:'relative',lineHeight:1.3}}>
                             {shDef.label}
-                            <div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?shift.start_time.slice(0,5):''}–{shift.end_time?shift.end_time.slice(0,5):''}</div>
+                            {shift.shift_type !== 'repos' && <div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?shift.start_time.slice(0,5):''}–{shift.end_time?shift.end_time.slice(0,5):''}</div>}
                             {shift.note&&<div style={{fontSize:'9px',opacity:0.9,marginTop:'2px',fontStyle:'italic',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{shift.note}</div>}
                             <button onClick={e=>deleteShift(e,shift.id,key)} style={{position:'absolute',top:'2px',right:'3px',background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:'10px',opacity:hovered===key?1:0,transition:'opacity .15s',padding:'0 2px',fontFamily:'inherit'}}>x</button>
                           </div>
@@ -243,14 +280,16 @@ export default function Planning() {
             <div style={{fontSize:'11px',color:C.muted,marginBottom:'14px'}}>{form.date}</div>
             <div style={{marginBottom:'10px'}}><label style={lbl}>TYPE</label>
               <select style={inp} value={form.shiftId} onChange={e=>{const sh=SHIFTS.find(s=>s.id===e.target.value);setForm(f=>({...f,shiftId:e.target.value,start:sh.start,end:sh.end}));}}>
-                {SHIFTS.map(sh=><option key={sh.id} value={sh.id}>{sh.label} ({sh.start}-{sh.end})</option>)}
+                {SHIFTS.map(sh=><option key={sh.id} value={sh.id}>{sh.label}{sh.start!=='00:00'?' ('+sh.start+'-'+sh.end+')':''}</option>)}
               </select>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
-              <div><label style={lbl}>DEBUT</label><input type="time" style={inp} value={form.start} onChange={e=>setForm(f=>({...f,start:e.target.value}))}/></div>
-              <div><label style={lbl}>FIN</label><input type="time" style={inp} value={form.end} onChange={e=>setForm(f=>({...f,end:e.target.value}))}/></div>
-            </div>
-            <div style={{marginBottom:'14px'}}><label style={lbl}>POSTE / NOTE (optionnel)</label>
+            {form.shiftId !== 'repos' && (
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
+                <div><label style={lbl}>DEBUT</label><input type="time" style={inp} value={form.start} onChange={e=>setForm(f=>({...f,start:e.target.value}))}/></div>
+                <div><label style={lbl}>FIN</label><input type="time" style={inp} value={form.end} onChange={e=>setForm(f=>({...f,end:e.target.value}))}/></div>
+              </div>
+            )}
+            <div style={{marginBottom:'14px'}}><label style={lbl}>NOTE (optionnel)</label>
               <input style={inp} placeholder="Ex: Service bar, Plonge..." value={form.note||''} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
             </div>
             <div style={{marginBottom:'14px'}}><label style={{...lbl,marginBottom:'8px'}}>DUPLIQUER SUR</label>

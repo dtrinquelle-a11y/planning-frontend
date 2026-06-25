@@ -18,6 +18,7 @@ function AppInner() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMsg, setLoadingMsg] = useState('Chargement...');
   const [page, setPage] = useState(null);
   const isOnboarding = window.location.pathname === '/onboarding';
 
@@ -37,19 +38,32 @@ function AppInner() {
   }, []);
 
   async function loadProfile(session) {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*, employees(*)')
-        .eq('id', session.user.id)
-        .single();
-      if (error) throw error;
-      setProfile(data);
-      setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
-    } catch (err) {
-      console.error('Erreur profil:', err);
-    } finally {
-      setLoading(false);
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      try {
+        if (attempts > 0) setLoadingMsg('Reconnexion en cours... (' + attempts + '/' + maxAttempts + ')');
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*, employees(*)')
+          .eq('id', session.user.id)
+          .single();
+        if (error) throw error;
+        setProfile(data);
+        setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
+        setLoading(false);
+        return;
+      } catch (err) {
+        attempts++;
+        console.error('Tentative ' + attempts + ' echouee:', err.message);
+        if (attempts < maxAttempts) {
+          setLoadingMsg('Connexion lente, nouvelle tentative...');
+          await new Promise(r => setTimeout(r, 2000));
+        } else {
+          console.error('Echec apres ' + maxAttempts + ' tentatives');
+          setLoading(false);
+        }
+      }
     }
   }
 
@@ -63,12 +77,17 @@ function AppInner() {
     setSession(null); setProfile(null); setPage(null);
   }
 
-  // Route publique onboarding
   if (isOnboarding) return <Onboarding />;
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", color: C.muted, fontSize: '13px' }}>
-      Chargement...
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", gap: '16px' }}>
+      <div style={{ color: C.muted, fontSize: '13px' }}>{loadingMsg}</div>
+      <div style={{ display: 'flex', gap: '6px' }}>
+        {[0,1,2].map(i => (
+          <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: C.purple, animation: 'pulse 1.2s ease-in-out ' + (i*0.2) + 's infinite alternate', opacity: 0.4 }}/>
+        ))}
+      </div>
+      <style>{`@keyframes pulse { from { opacity: 0.2; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }`}</style>
     </div>
   );
 

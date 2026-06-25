@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
-import supabase from '../supabase';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 
@@ -86,7 +85,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-    setCapturedPhoto(canvas.toDataURL('image/jpeg', 0.7));
+    setCapturedPhoto(canvas.toDataURL('image/jpeg', 0.6)); // 0.6 pour réduire la taille
     stopCamera();
     setStep('preview');
   }
@@ -97,43 +96,29 @@ export default function Pointeuse({ employeeId, employeeName }) {
   async function confirmAndPoint() {
     if (loading) return;
     setLoading(true);
-    let photoPath = null;
-    let photoWarning = false;
 
-    // Tentative upload photo
-    if (capturedPhoto) {
-      try {
-        const blob = await (await fetch(capturedPhoto)).blob();
-        const fileName = employeeId + '/pointage/' + Date.now() + '.jpg';
-        const { error: uploadError } = await supabase.storage
-          .from('documents-rh')
-          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false });
-        if (uploadError) {
-          console.warn('Upload photo echoue:', uploadError.message);
-          photoWarning = true; // On continue sans photo
-        } else {
-          photoPath = fileName;
-        }
-      } catch (err) {
-        console.warn('Erreur upload photo:', err.message);
-        photoWarning = true;
-      }
-    }
-
-    // Pointage même si photo échouée
     try {
-      const body = { employee_id: employeeId, action: pendingAction, photo_path: photoPath };
-      if (position) { body.latitude = position.lat; body.longitude = position.lon; body.geo_valid = geoStatus === 'ok'; }
+      // Envoyer photo en base64 au backend — c'est lui qui gère l'upload Supabase
+      const body = {
+        employee_id: employeeId,
+        action: pendingAction,
+        photo_base64: capturedPhoto || null, // base64 JPEG ou null
+      };
+      if (position) {
+        body.latitude = position.lat;
+        body.longitude = position.lon;
+        body.geo_valid = geoStatus === 'ok';
+      }
+
       const r = await axios.post(API+'/timeclock/scan', body);
       setLastAction(pendingAction);
 
-      if (photoWarning) {
-        // Deux toasts successifs
-        showToast('⚠️ Photo non envoyée (problème réseau) — pointage enregistré sans photo', C.amber, 5000);
-      } else if (photoPath) {
-        showToast('✓ ' + (r.data.message || (pendingAction==='in'?'Arrivée enregistrée':'Départ enregistré')) + ' · Photo OK', C.green);
+      if (r.data.photo_warning) {
+        showToast('⚠️ Photo non sauvegardée — pointage enregistré', C.amber, 5000);
+      } else if (capturedPhoto) {
+        showToast('✓ ' + (r.data.message || 'Pointage enregistré') + ' · Photo OK', C.green);
       } else {
-        showToast(r.data.message || (pendingAction==='in'?'Arrivée enregistrée':'Départ enregistré'));
+        showToast(r.data.message || 'Pointage enregistré');
       }
 
       await loadTodayLogs();
@@ -141,7 +126,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
       setCapturedPhoto(null);
       setPendingAction(null);
     } catch (err) {
-      showToast('❌ Erreur pointage : ' + (err.response?.data?.error || err.message), C.red, 5000);
+      showToast('❌ ' + (err.response?.data?.error || err.message), C.red, 5000);
     } finally { setLoading(false); }
   }
 
@@ -205,7 +190,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
                     <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
                       <div style={{width:'8px',height:'8px',borderRadius:'50%',background:log.action==='in'?C.green:C.red,flexShrink:0}}/>
                       <span style={{fontSize:'12px',color:C.text}}>{log.action==='in'?'Arrivée':'Départ'}</span>
-                      {log.photo_path ? <span style={{fontSize:'10px',color:C.green}}>📷</span> : <span style={{fontSize:'10px',color:C.muted}}>sans photo</span>}
+                      {log.photo_path?<span style={{fontSize:'10px',color:C.green}}>📷</span>:<span style={{fontSize:'10px',color:C.muted}}>sans photo</span>}
                       {log.is_late&&<span style={{fontSize:'10px',color:C.amber,background:C.amberLight,padding:'1px 6px',borderRadius:'10px'}}>Retard</span>}
                       {log.geo_valid===false&&log.latitude&&<span style={{fontSize:'10px',color:C.red,background:C.redLight,padding:'1px 6px',borderRadius:'10px'}}>Hors site</span>}
                     </div>
@@ -227,9 +212,8 @@ export default function Pointeuse({ employeeId, employeeName }) {
           {cameraError ? (
             <div style={{background:C.amberLight,border:'1px solid '+C.amber,borderRadius:'10px',padding:'16px',textAlign:'center',marginBottom:'16px'}}>
               <div style={{fontSize:'12px',color:C.amber,marginBottom:'4px'}}>⚠️ Caméra indisponible</div>
-              <div style={{fontSize:'11px',color:C.muted,marginBottom:'12px'}}>{cameraError}</div>
               <div style={{fontSize:'11px',color:C.muted,marginBottom:'12px'}}>Le pointage sera enregistré sans photo.</div>
-              <button onClick={()=>{ setCapturedPhoto(null); setStep('preview'); }}
+              <button onClick={()=>setStep('preview')}
                 style={{background:C.purple,border:'none',borderRadius:'8px',padding:'10px 20px',color:'#fff',fontSize:'12px',fontFamily:'inherit',fontWeight:600,cursor:'pointer'}}>
                 Pointer sans photo →
               </button>
@@ -263,11 +247,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
             </div>
           )}
           <div style={{display:'flex',gap:'10px',marginBottom:'10px'}}>
-            {capturedPhoto && (
-              <button onClick={retakePhoto} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'8px',padding:'12px',color:C.muted,fontSize:'13px',fontFamily:'inherit',cursor:'pointer'}}>
-                🔄 Reprendre
-              </button>
-            )}
+            {capturedPhoto&&<button onClick={retakePhoto} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'8px',padding:'12px',color:C.muted,fontSize:'13px',fontFamily:'inherit',cursor:'pointer'}}>🔄 Reprendre</button>}
             <button onClick={confirmAndPoint} disabled={loading}
               style={{flex:2,background:pendingAction==='in'?C.green:C.red,border:'none',borderRadius:'8px',padding:'12px',color:'#fff',fontSize:'13px',fontFamily:'inherit',fontWeight:600,cursor:loading?'not-allowed':'pointer',opacity:loading?0.7:1}}>
               {loading?'Envoi...':'✓ Valider et pointer'}
@@ -277,11 +257,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
         </div>
       )}
 
-      {toast && (
-        <div style={{position:'fixed',bottom:'80px',left:'50%',transform:'translateX(-50%)',background:C.card,border:'1px solid '+(toast.color||C.green),borderRadius:'10px',padding:'12px 20px',fontSize:'13px',color:toast.color||C.green,zIndex:200,boxShadow:'0 4px 12px '+C.shadow,whiteSpace:'pre-wrap',maxWidth:'320px',textAlign:'center'}}>
-          {toast.msg}
-        </div>
-      )}
+      {toast&&<div style={{position:'fixed',bottom:'80px',left:'50%',transform:'translateX(-50%)',background:C.card,border:'1px solid '+(toast.color||C.green),borderRadius:'10px',padding:'12px 20px',fontSize:'13px',color:toast.color||C.green,zIndex:200,boxShadow:'0 4px 12px '+C.shadow,maxWidth:'320px',textAlign:'center'}}>{toast.msg}</div>}
     </div>
   );
 }

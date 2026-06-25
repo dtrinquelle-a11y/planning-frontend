@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
-import axios from 'axios';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
+
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
 

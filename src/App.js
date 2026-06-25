@@ -142,7 +142,7 @@ function AppInner() {
       {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={empName} />}
       {page === 'ged' && <GED isManager={isManager} />}
       {page === 'dossiers' && <DossiersRH />}
-      <HelpPanel />
+      <HelpPanel isAdmin={isManager} />
     </div>
   );
 }

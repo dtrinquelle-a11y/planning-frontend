@@ -34,7 +34,8 @@ function calcHeuresEmp(empId, shifts) {
       if (!s.start_time || !s.end_time || s.shift_type === 'repos') return acc;
       const [sh, sm] = s.start_time.slice(0,5).split(':').map(Number);
       const [eh, em] = s.end_time.slice(0,5).split(':').map(Number);
-      return acc + (eh*60+em - sh*60-sm) / 60;
+      const brk = parseInt(s.break_minutes || 0);
+      return acc + (eh*60+em - sh*60-sm - brk) / 60;
     }, 0);
 }
 
@@ -85,53 +86,37 @@ export default function Planning() {
     setExportingPDF(true);
     showToast('Generation du PDF...');
     try {
-      const canvas = await html2canvas(planningRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-      });
+      const canvas = await html2canvas(planningRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight) * 10;
-      const x = (pdfWidth - imgWidth * ratio / 10) / 2;
-      pdf.addImage(imgData, 'PNG', x, 10, imgWidth * ratio / 10, imgHeight * ratio / 10);
-
-      // En-tête
-      pdf.setFontSize(10);
-      pdf.setTextColor(100);
+      const ratio = pdfWidth / canvas.width * 10;
+      pdf.setFontSize(10); pdf.setTextColor(100);
       pdf.text('Planning ' + service + ' · ' + weekLabel, 14, 7);
-      pdf.text('Le Bout du Monde · Imprime le ' + new Date().toLocaleDateString('fr-FR'), pdfWidth - 14, 7, { align: 'right' });
-
+      pdf.text('Le Bout du Monde · ' + new Date().toLocaleDateString('fr-FR'), pdfWidth - 14, 7, { align: 'right' });
+      pdf.addImage(imgData, 'PNG', 14, 12, canvas.width * ratio / 10, canvas.height * ratio / 10);
       pdf.save('planning-' + service.toLowerCase() + '-' + fmtDate(mon) + '.pdf');
       showToast('PDF telecharge !');
-    } catch (err) {
-      showToast('Erreur PDF');
-      console.error(err);
-    } finally {
-      setExportingPDF(false);
-    }
+    } catch (err) { showToast('Erreur PDF'); }
+    finally { setExportingPDF(false); }
   }
 
   function openModal(emp, dayIdx) {
     const date=fmtDate(addDays(mon,dayIdx)); const existing=shifts[emp.id+'-'+date];
     const sh=existing?SHIFTS.find(s=>s.id===existing.shift_type)||SHIFTS[0]:SHIFTS[0];
-    setForm({ empId:emp.id, empName:emp.first_name+' '+emp.last_name, date, dayIdx, shiftId:sh.id, start:existing?existing.start_time.slice(0,5):sh.start, end:existing?existing.end_time.slice(0,5):sh.end, note:existing?.note||'', existingId:existing?existing.id:null });
+    setForm({ empId:emp.id, empName:emp.first_name+' '+emp.last_name, date, dayIdx, shiftId:sh.id, start:existing?existing.start_time.slice(0,5):sh.start, end:existing?existing.end_time.slice(0,5):sh.end, breakMinutes:existing?parseInt(existing.break_minutes||0):0, note:existing?.note||'', existingId:existing?existing.id:null });
     setDupDays([]); setModal('add');
   }
 
   async function saveShift() {
     try {
       let savedId=form.existingId;
-      if(form.existingId){await axios.patch(API+'/schedules/'+form.existingId,{start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null});}
-      else{const r=await axios.post(API+'/schedules',{employee_id:form.empId,work_date:form.date,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:0,note:form.note||null});savedId=r.data.id;}
+      const breakMins = form.breakMinutes || 0;
+      if(form.existingId){await axios.patch(API+'/schedules/'+form.existingId,{start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:breakMins,note:form.note||null});}
+      else{const r=await axios.post(API+'/schedules',{employee_id:form.empId,work_date:form.date,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:breakMins,note:form.note||null});savedId=r.data.id;}
       const newShifts={...shifts};
-      newShifts[form.empId+'-'+form.date]={employee_id:form.empId,work_date:form.date,start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null,id:savedId};
-      for(const di of dupDays){if(di===form.dayIdx)continue;const dd=fmtDate(addDays(mon,di));const ex=shifts[form.empId+'-'+dd];try{if(ex){await axios.patch(API+'/schedules/'+ex.id,{start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null});newShifts[form.empId+'-'+dd]={...ex,start_time:form.start,end_time:form.end,shift_type:form.shiftId,note:form.note||null};}else{const r=await axios.post(API+'/schedules',{employee_id:form.empId,work_date:dd,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:0,note:form.note||null});newShifts[form.empId+'-'+dd]=r.data;}}catch(err){}}
+      newShifts[form.empId+'-'+form.date]={employee_id:form.empId,work_date:form.date,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:breakMins,note:form.note||null,id:savedId};
+      for(const di of dupDays){if(di===form.dayIdx)continue;const dd=fmtDate(addDays(mon,di));const ex=shifts[form.empId+'-'+dd];try{if(ex){await axios.patch(API+'/schedules/'+ex.id,{start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:breakMins,note:form.note||null});newShifts[form.empId+'-'+dd]={...ex,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:breakMins,note:form.note||null};}else{const r=await axios.post(API+'/schedules',{employee_id:form.empId,work_date:dd,start_time:form.start,end_time:form.end,shift_type:form.shiftId,break_minutes:breakMins,note:form.note||null});newShifts[form.empId+'-'+dd]=r.data;}}catch(err){}}
       setShifts(newShifts); setModal(null);
       axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>setMonthlySummary(r.data)).catch(()=>{});
       showToast('Enregistre'+(dupDays.filter(d=>d!==form.dayIdx).length>0?' + '+dupDays.filter(d=>d!==form.dayIdx).length+' copie(s)':''));
@@ -140,7 +125,7 @@ export default function Planning() {
 
   async function deleteShift(e,shiftId,key){e.stopPropagation();try{await axios.delete(API+'/schedules/'+shiftId);setShifts(prev=>{const n={...prev};delete n[key];return n;});axios.get(API+'/schedules/monthly-summary?month='+currentMonth).then(r=>setMonthlySummary(r.data)).catch(()=>{});showToast('Supprime');}catch{showToast('Erreur');}}
   async function publishWeek(){try{const r=await axios.post(API+'/schedules/publish',{week:fmtDate(mon)});showToast(r.data.published+' creneau(x) publie(s)');}catch{showToast('Erreur');}}
-  async function copyWeek(){if(!copyEmpId){showToast('Selectionne un salarie');return;}const tm=getMonday(copyTargetOffset);const es=Object.entries(shifts).filter(([k])=>k.startsWith(copyEmpId+'-'));if(!es.length){showToast('Aucun creneau');return;}let cp=0;for(const[k,sh]of es){const sd=new Date(k.split('-').slice(1).join('-'));const di=(sd.getDay()+6)%7;const dd=fmtDate(addDays(tm,di));try{await axios.post(API+'/schedules',{employee_id:copyEmpId,work_date:dd,start_time:sh.start_time,end_time:sh.end_time,shift_type:sh.shift_type,break_minutes:0,note:sh.note||null});cp++;}catch{}}setCopyModal(false);showToast(cp+' creneau(x) copies');}
+  async function copyWeek(){if(!copyEmpId){showToast('Selectionne un salarie');return;}const tm=getMonday(copyTargetOffset);const es=Object.entries(shifts).filter(([k])=>k.startsWith(copyEmpId+'-'));if(!es.length){showToast('Aucun creneau');return;}let cp=0;for(const[k,sh]of es){const sd=new Date(k.split('-').slice(1).join('-'));const di=(sd.getDay()+6)%7;const dd=fmtDate(addDays(tm,di));try{await axios.post(API+'/schedules',{employee_id:copyEmpId,work_date:dd,start_time:sh.start_time,end_time:sh.end_time,shift_type:sh.shift_type,break_minutes:sh.break_minutes||0,note:sh.note||null});cp++;}catch{}}setCopyModal(false);showToast(cp+' creneau(x) copies');}
   function toggleDupDay(di){setDupDays(prev=>prev.includes(di)?prev.filter(d=>d!==di):[...prev,di]);}
   function onDragStart(e,key,shift){setDragSrc({key,shift});e.dataTransfer.effectAllowed='move';}
   function onDragOver(e){e.preventDefault();}
@@ -150,13 +135,20 @@ export default function Planning() {
   const weekLabel=mon.getDate()+' '+months[mon.getMonth()]+' -> '+endMon.getDate()+' '+months[endMon.getMonth()]+' '+endMon.getFullYear();
   const inp={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 8px',color:C.text,fontSize:'12px',fontFamily:'inherit'};
   const lbl={display:'block',fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'};
-
   const legendItems = [
     { color: C.green, label: '≤ contrat' },
     { color: C.purple, label: '> contrat' },
     { color: C.amber, label: '> 44h ⚠️' },
     { color: C.red, label: '> 48h 🚨' },
   ];
+
+  // Calcul heures nettes du créneau en cours
+  const formNetH = form.shiftId && form.shiftId !== 'repos' && form.start && form.end ? (() => {
+    const [sh,sm] = form.start.split(':').map(Number);
+    const [eh,em] = form.end.split(':').map(Number);
+    const brk = form.breakMinutes || 0;
+    return Math.max(0, (eh*60+em - sh*60-sm - brk) / 60);
+  })() : 0;
 
   return (
     <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace"}}>
@@ -173,7 +165,7 @@ export default function Planning() {
           <button onClick={()=>setWeekOffset(0)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.muted,cursor:'pointer',padding:'4px 10px',fontSize:'11px',fontFamily:'inherit'}}>Auj.</button>
           <button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
           <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 14px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>
-            {exportingPDF ? '...' : '↓ PDF'}
+            {exportingPDF?'...':'↓ PDF'}
           </button>
           <button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>
         </div>
@@ -183,8 +175,7 @@ export default function Planning() {
         <span style={{fontSize:'10px',color:C.muted,letterSpacing:'0.08em'}}>SEUILS CC HPA :</span>
         {legendItems.map(item=>(
           <div key={item.label} style={{display:'flex',alignItems:'center',gap:'5px',fontSize:'11px',color:C.muted}}>
-            <div style={{width:'10px',height:'10px',borderRadius:'50%',background:item.color,flexShrink:0}}/>
-            {item.label}
+            <div style={{width:'10px',height:'10px',borderRadius:'50%',background:item.color,flexShrink:0}}/>{item.label}
           </div>
         ))}
         <span style={{fontSize:'10px',color:C.muted,marginLeft:'auto'}}>Max légal 48h/sem</span>
@@ -195,12 +186,10 @@ export default function Planning() {
           <div style={{color:C.muted,textAlign:'center',padding:'60px',fontSize:'13px'}}>Aucun salarie dans le service {service}</div>
         ):(
           <div ref={planningRef} style={{border:'1px solid '+C.border,borderRadius:'10px',overflow:'hidden',boxShadow:'0 2px 8px '+C.shadow,background:'#fff'}}>
-            {/* En-tête PDF */}
             <div style={{padding:'10px 16px',background:'#f8f9ff',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div style={{fontSize:'13px',fontWeight:600,color:'#1A1D27'}}>Planning {service} · {weekLabel}</div>
               <div style={{fontSize:'11px',color:'#6B7280'}}>{currentMonthLabel} · Le Bout du Monde</div>
             </div>
-
             <div style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',background:'#f8f9ff',borderBottom:'1px solid '+C.border}}>
               <div style={{padding:'8px',borderRight:'1px solid '+C.border,fontSize:'10px',color:'#6B7280'}}>{currentMonthLabel}</div>
               {DAYS.map((d,i)=>{const day=addDays(mon,i);const isToday=day.getTime()===today.getTime();return(
@@ -209,14 +198,12 @@ export default function Planning() {
                 </div>
               );})}
             </div>
-
             {filtered.map((emp,ei)=>{
               const totalH = calcHeuresEmp(emp.id, shifts);
               const contractH = parseFloat(emp.contract_hours) || 35;
               const heuresColor = totalH > 48 ? '#DC2626' : totalH > 44 ? '#D97706' : totalH > contractH ? '#6C5FCD' : '#16A34A';
               const isMultiService = emp.service !== service;
               const monthly = monthlySummary[emp.id] || { heures_planifiees: 0, heures_realisees: 0 };
-
               return(
                 <div key={emp.id} style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none'}}>
                   <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:'#fff'}}>
@@ -246,7 +233,6 @@ export default function Planning() {
                       </div>
                     </div>
                   </div>
-
                   {DAYS.map((_,di)=>{
                     const date=fmtDate(addDays(mon,di));const key=emp.id+'-'+date;const shift=shifts[key];const shDef=shift?SHIFTS.find(s=>s.id===shift.shift_type):null;
                     return(
@@ -256,7 +242,7 @@ export default function Planning() {
                           <div draggable onDragStart={e=>{e.stopPropagation();onDragStart(e,key,shift);}} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(key+'c')} onClick={e=>e.stopPropagation()}
                             style={{borderRadius:'5px',padding:'3px 6px',fontSize:'10px',fontWeight:500,background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,cursor:'grab',position:'relative',lineHeight:1.3}}>
                             {shDef.label}
-                            {shift.shift_type !== 'repos' && <div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?shift.start_time.slice(0,5):''}–{shift.end_time?shift.end_time.slice(0,5):''}</div>}
+                            {shift.shift_type !== 'repos' && <div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?shift.start_time.slice(0,5):''}–{shift.end_time?shift.end_time.slice(0,5):''}{parseInt(shift.break_minutes||0)>0?' ('+shift.break_minutes+'min)':''}</div>}
                             {shift.note&&<div style={{fontSize:'9px',opacity:0.9,marginTop:'2px',fontStyle:'italic',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{shift.note}</div>}
                             <button onClick={e=>deleteShift(e,shift.id,key)} style={{position:'absolute',top:'2px',right:'3px',background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:'10px',opacity:hovered===key?1:0,transition:'opacity .15s',padding:'0 2px',fontFamily:'inherit'}}>x</button>
                           </div>
@@ -275,7 +261,7 @@ export default function Planning() {
 
       {modal==='add'&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}} onClick={()=>setModal(null)}>
-          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'300px',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'320px',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:'13px',fontWeight:600,marginBottom:'2px',color:C.text}}>{form.empName}</div>
             <div style={{fontSize:'11px',color:C.muted,marginBottom:'14px'}}>{form.date}</div>
             <div style={{marginBottom:'10px'}}><label style={lbl}>TYPE</label>
@@ -284,10 +270,18 @@ export default function Planning() {
               </select>
             </div>
             {form.shiftId !== 'repos' && (
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
-                <div><label style={lbl}>DEBUT</label><input type="time" style={inp} value={form.start} onChange={e=>setForm(f=>({...f,start:e.target.value}))}/></div>
-                <div><label style={lbl}>FIN</label><input type="time" style={inp} value={form.end} onChange={e=>setForm(f=>({...f,end:e.target.value}))}/></div>
-              </div>
+              <>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'10px'}}>
+                  <div><label style={lbl}>DEBUT</label><input type="time" style={inp} value={form.start} onChange={e=>setForm(f=>({...f,start:e.target.value}))}/></div>
+                  <div><label style={lbl}>FIN</label><input type="time" style={inp} value={form.end} onChange={e=>setForm(f=>({...f,end:e.target.value}))}/></div>
+                  <div><label style={lbl}>PAUSE (min)</label><input type="number" min="0" max="120" step="15" style={inp} value={form.breakMinutes||0} onChange={e=>setForm(f=>({...f,breakMinutes:parseInt(e.target.value||0)}))}/></div>
+                </div>
+                {formNetH > 0 && (
+                  <div style={{background:C.purpleLight,border:'1px solid '+C.purple+'44',borderRadius:'6px',padding:'6px 10px',fontSize:'11px',color:C.purple,marginBottom:'10px',textAlign:'center'}}>
+                    ⏱ {formNetH.toFixed(1)}h nettes {form.breakMinutes > 0 ? '(pause '+form.breakMinutes+'min déduite)' : ''}
+                  </div>
+                )}
+              </>
             )}
             <div style={{marginBottom:'14px'}}><label style={lbl}>NOTE (optionnel)</label>
               <input style={inp} placeholder="Ex: Service bar, Plonge..." value={form.note||''} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>

@@ -1,4 +1,4 @@
-/* eslint-disable */
+import HelpPanel from './components/HelpPanel';
 import React, { useState, useEffect } from 'react';
 import supabase from './supabase';
 import { ThemeProvider, useTheme } from './ThemeContext';
@@ -142,6 +142,7 @@ function AppInner() {
       {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={empName} />}
       {page === 'ged' && <GED isManager={isManager} />}
       {page === 'dossiers' && <DossiersRH />}
+      <HelpPanel />
     </div>
   );
 }

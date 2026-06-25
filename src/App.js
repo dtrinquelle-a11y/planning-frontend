@@ -35,7 +35,7 @@ function AppInner() {
       else { setProfile(null); setLoading(false); }
     });
     return () => subscription.unsubscribe();
-  }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadProfile(session) {
     let attempts = 0;

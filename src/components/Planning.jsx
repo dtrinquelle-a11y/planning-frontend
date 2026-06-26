@@ -41,7 +41,9 @@ function calcShiftH(s) {
   const [sh,sm] = s.start_time.slice(0,5).split(':').map(Number);
   const [eh,em] = s.end_time.slice(0,5).split(':').map(Number);
   const brk = parseInt(s.break_minutes || 0);
-  return Math.max(0, (eh*60+em - sh*60-sm - brk) / 60);
+  let mins = eh*60+em - sh*60-sm - brk;
+  if (mins < 0) mins += 24*60; // shift de nuit qui dépasse minuit
+  return Math.max(0, mins / 60);
 }
 
 function calcHeuresEmp(empId, shiftsMap) {

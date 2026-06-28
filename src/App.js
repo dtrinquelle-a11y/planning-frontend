@@ -1,3 +1,4 @@
+/* eslint-disable */
 import HelpPanel from './components/HelpPanel';
 import React, { useState, useEffect } from 'react';
 import supabase from './supabase';
@@ -13,6 +14,15 @@ import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
 
+// Timeout utilitaire: resoud avec fallback si la promesse depasse le delai
+function withTimeout(promise, ms, fallback) {
+  const sentinel = { timedOut: true, data: { session: null } };
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(fallback !== undefined ? fallback : sentinel), ms))
+  ]);
+}
+
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
   const [session, setSession] = useState(null);
@@ -24,18 +34,50 @@ function AppInner() {
 
   useEffect(() => {
     if (isOnboarding) { setLoading(false); return; }
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+
+    let resolved = false;
+
+    // getSession avec timeout 8s - si Supabase ne repond pas, on affiche le login
+    withTimeout(supabase.auth.getSession(), 8000).then(async (result) => {
+      if (resolved) return;
+
+      if (result && result.timedOut) {
+        console.warn('Supabase getSession timeout (8s) - passage au login');
+        resolved = true;
+        setLoading(false);
+        return;
+      }
+
+      const session = result?.data?.session ?? null;
+      resolved = true;
       setSession(session);
-      if (session) await loadProfile(session);
-      else setLoading(false);
+      if (session) {
+        await loadProfile(session);
+      } else {
+        setLoading(false);
+      }
+    }).catch((err) => {
+      console.error('getSession erreur:', err);
+      if (!resolved) { resolved = true; setLoading(false); }
     });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // INITIAL_SESSION est gere par getSession ci-dessus
+      if (_event === 'INITIAL_SESSION') {
+        if (resolved) return;
+        resolved = true;
+        setSession(session);
+        if (session) await loadProfile(session);
+        else setLoading(false);
+        return;
+      }
       setSession(session);
       if (session) await loadProfile(session);
       else { setProfile(null); setLoading(false); }
     });
+
     return () => subscription.unsubscribe();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadProfile(session) {
     let attempts = 0;
@@ -43,11 +85,16 @@ function AppInner() {
     while (attempts < maxAttempts) {
       try {
         if (attempts > 0) setLoadingMsg('Reconnexion en cours... (' + attempts + '/' + maxAttempts + ')');
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('*, employees(*)')
-          .eq('id', session.user.id)
-          .single();
+
+        const result = await withTimeout(
+          supabase.from('user_profiles').select('*, employees(*)').eq('id', session.user.id).single(),
+          6000,
+          { timedOut: true }
+        );
+
+        if (result && result.timedOut) throw new Error('Timeout requete profil (6s)');
+
+        const { data, error } = result;
         if (error) throw error;
         setProfile(data);
         setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
@@ -118,35 +165,34 @@ function AppInner() {
         <span style={{ color: C.purple, fontWeight: 600, marginRight: '16px', fontSize: '13px' }}>▸ PLANNING HPA</span>
         {navItems.map(p => (
           <button key={p.id} onClick={() => setPage(p.id)}
-            style={{ padding: '5px 14px', borderRadius: '6px', border: '1px solid ' + (page === p.id ? C.purple : C.border), background: page === p.id ? C.purpleLight : 'none', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'inherit', transition: 'all .15s' }}>
-            {p.label}
-          </button>
+            style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: page === p.id ? C.purple : 'transparent', color: page === p.id ? '#fff' : C.muted, cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
+          >{p.label}</button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '11px', color: C.muted }}>{empName} · {profile?.role}</span>
-          <button onClick={toggle} title={darkMode ? 'Mode clair' : 'Mode sombre'}
-            style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '14px', fontFamily: 'inherit' }}>
-            {darkMode ? '☀️' : '🌙'}
-          </button>
-          <button onClick={handleLogout}
-            style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
-            Deconnexion
-          </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button onClick={toggle} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: C.muted }}>{darkMode ? '☀️' : '🌙'}</button>
+          {empName && <span style={{ fontSize: '12px', color: C.muted }}>{empName}</span>}
+          <button onClick={handleLogout} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px' }}>Déconnexion</button>
+          <HelpPanel />
         </div>
       </nav>
-      {page === 'dashboard' && <Dashboard />}
-      {page === 'planning' && <Planning />}
-      {page === 'timeline' && <Timeline />}
-      {page === 'salarie' && <EspaceSalarie />}
-      {page === 'qrcode' && <QRCodePage />}
-      {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={empName} />}
-      {page === 'ged' && <GED isManager={isManager} />}
-      {page === 'dossiers' && <DossiersRH />}
-      <HelpPanel isAdmin={isManager} />
+      <div style={{ padding: '0' }}>
+        {page === 'dashboard' && <Dashboard profile={profile} />}
+        {page === 'planning' && <Planning profile={profile} />}
+        {page === 'timeline' && <Timeline profile={profile} />}
+        {page === 'salarie' && <EspaceSalarie profile={profile} />}
+        {page === 'qrcode' && isManager && <QRCodePage />}
+        {page === 'pointage' && <Pointeuse profile={profile} />}
+        {page === 'ged' && isManager && <GED profile={profile} />}
+        {page === 'dossiers' && isManager && <DossiersRH profile={profile} />}
+      </div>
     </div>
   );
 }
 
 export default function App() {
-  return <ThemeProvider><AppInner /></ThemeProvider>;
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  );
 }

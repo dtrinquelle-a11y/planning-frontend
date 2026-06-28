@@ -14,7 +14,7 @@ import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
 
-// Timeout utilitaire: resoud avec fallback si la promesse depasse le delai
+// Timeout utilitaire
 function withTimeout(promise, ms, fallback) {
   const sentinel = { timedOut: true, data: { session: null } };
   return Promise.race([
@@ -36,50 +36,68 @@ function AppInner() {
     if (isOnboarding) { setLoading(false); return; }
 
     let resolved = false;
+    let didTimeout = false; // true si on a affiche le login apres un timeout
 
-    // getSession avec timeout 8s - si Supabase ne repond pas, on affiche le login
     withTimeout(supabase.auth.getSession(), 8000).then(async (result) => {
       if (resolved) return;
 
       if (result && result.timedOut) {
         console.warn('Supabase getSession timeout (8s) - passage au login');
         resolved = true;
+        didTimeout = true;
         setLoading(false);
         return;
       }
 
-      const session = result?.data?.session ?? null;
+      const sess = result?.data?.session ?? null;
       resolved = true;
-      setSession(session);
-      if (session) {
-        await loadProfile(session);
+      setSession(sess);
+      if (sess) {
+        await loadProfile(sess);
       } else {
         setLoading(false);
       }
     }).catch((err) => {
       console.error('getSession erreur:', err);
-      if (!resolved) { resolved = true; setLoading(false); }
+      if (!resolved) { resolved = true; didTimeout = true; setLoading(false); }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      // INITIAL_SESSION est gere par getSession ci-dessus
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, sess) => {
+      // INITIAL_SESSION: gere par getSession ci-dessus
       if (_event === 'INITIAL_SESSION') {
         if (resolved) return;
         resolved = true;
-        setSession(session);
-        if (session) await loadProfile(session);
+        setSession(sess);
+        if (sess) await loadProfile(sess);
         else setLoading(false);
         return;
       }
-      setSession(session);
-      if (session) await loadProfile(session);
+
+      // Si on a affiche le login suite a un timeout, ignorer les evenements
+      // automatiques de Supabase qui arrivent en retard (SIGNED_IN automatique).
+      // On ne traite que les vrais SIGN_OUT ou les evenements declenches apres
+      // que l'utilisateur ait interagi avec le formulaire de login.
+      if (didTimeout && (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED')) {
+        console.warn('Evenement ' + _event + ' ignore apres timeout - attendre login manuel');
+        return;
+      }
+
+      // SIGNED_OUT: toujours traiter
+      if (_event === 'SIGNED_OUT') {
+        setSession(null); setProfile(null); setPage(null); setLoading(false);
+        return;
+      }
+
+      // Autres evenements (PASSWORD_RECOVERY, USER_UPDATED, etc.)
+      setSession(sess);
+      if (sess) await loadProfile(sess);
       else { setProfile(null); setLoading(false); }
     });
 
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadProfile(session) {
+  async function loadProfile(sess) {
     let attempts = 0;
     const maxAttempts = 3;
     while (attempts < maxAttempts) {
@@ -87,7 +105,7 @@ function AppInner() {
         if (attempts > 0) setLoadingMsg('Reconnexion en cours... (' + attempts + '/' + maxAttempts + ')');
 
         const result = await withTimeout(
-          supabase.from('user_profiles').select('*, employees(*)').eq('id', session.user.id).single(),
+          supabase.from('user_profiles').select('*, employees(*)').eq('id', sess.user.id).single(),
           6000,
           { timedOut: true }
         );

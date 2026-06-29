@@ -284,7 +284,7 @@ export default function Planning({ profile }) {
     return null;
   };
 
-  // Export PDF ameliore - avec bordures, jours + numero, horaires en gros, lignes alternees, titre enrichi
+  // Export PDF ameliore v2 - bordures, jours avec numero, horaires en gros, lignes alternees, titre enrichi
   const exportPDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const mon = monday;
@@ -301,16 +301,164 @@ export default function Planning({ profile }) {
 
     // Ligne decorative sous le titre
     doc.setDrawColor(108, 92, 231); doc.setLineWidth(0.8);
-    doc.line(14, 26, 283, 26);
+    doc.line(14, 27, 283, 27);
 
-    const colW = 36; const rowH = 16; const startX = 14; let y = 32;
+    // === CONSTANTES MISE EN PAGE ===
+    // A4 paysage = 297mm. Marge gauche 14, droite 10 => utilisable 273mm
+    const startX = 14;
+    const pageW = 273; // largeur utilisable
+    const rowH = 16;   // hauteur ligne
+    let y = 33;        // position Y de depart
+
     const FULL_DAYS = ['LUNDI','MARDI','MERCREDI','JEUDI','VENDREDI','SAMEDI','DIMANCHE'];
 
-    // Fonction pour dessiner les bordures de toutes les cellules d'une ligne
-    const drawRowBorders = (startXr, totalW, yRow, h) => {
-      doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
-      doc.rect(startXr, yRow, totalW, h, 'S');
-    };
+    if (viewMode === 'salarie-ligne') {
+      // Mode : colonnes = jours, lignes = salaries
+      const nameColW = 40;
+      const colW = Math.floor((pageW - nameColW) / 7); // ~33mm par jour
+
+      // --- EN-TETE : fond violet, jours avec nom complet + numero ---
+      doc.setFillColor(108, 92, 231);
+      doc.setDrawColor(60, 40, 180);
+      doc.setLineWidth(0.4);
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold');
+
+      // Cellule "Salarie"
+      doc.rect(startX, y, nameColW, rowH, 'FD');
+      doc.setFontSize(9);
+      doc.text('Salarie', startX+2, y+10);
+
+      // Cellules jours
+      weekDates.forEach((d, i) => {
+        const x = startX + nameColW + i * colW;
+        doc.rect(x, y, colW, rowH, 'FD');
+        doc.setFontSize(8);
+        doc.text(FULL_DAYS[i], x+2, y+7);
+        doc.text(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), x+2, y+13);
+      });
+      y += rowH;
+      doc.setFont('helvetica','normal');
+
+      // --- LIGNES SALARIES ---
+      sortedEmps.forEach((emp, ei) => {
+        const bgLight = [242,242,252];
+        const bgWhite = [255,255,255];
+        const bg = ei%2===0 ? bgLight : bgWhite;
+
+        doc.setFillColor(...bg);
+        doc.setDrawColor(180,180,195);
+        doc.setLineWidth(0.3);
+        doc.setTextColor(30,30,30);
+
+        // Cellule nom
+        doc.rect(startX, y, nameColW, rowH, 'FD');
+        doc.setFont('helvetica','bold'); doc.setFontSize(8);
+        doc.text((emp.first_name+' '+emp.last_name).substring(0,16), startX+2, y+10);
+        doc.setFont('helvetica','normal');
+
+        // Cellules par jour
+        weekDates.forEach((d, dayIdx) => {
+          const x = startX + nameColW + dayIdx * colW;
+          const dayShifts = shifts.filter(s =>
+            String(s.employee_id)===String(emp.id) && s.work_date===fmtDate(d)
+          );
+          doc.setFillColor(...bg);
+          doc.rect(x, y, colW, rowH, 'FD');
+
+          if (dayShifts.length > 0) {
+            const s = dayShifts[0];
+            const sh = SHIFTS.find(x=>x.id===s.shift_type);
+            if (s.shift_type==='off' || s.shift_type==='repos') {
+              doc.setTextColor(160,160,160); doc.setFontSize(7);
+              doc.text(sh?sh.label:'OFF', x+2, y+10);
+            } else {
+              doc.setTextColor(40,40,40);
+              doc.setFont('helvetica','bold'); doc.setFontSize(9);
+              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+10);
+              doc.setFont('helvetica','normal');
+            }
+            doc.setTextColor(30,30,30);
+          }
+        });
+        y += rowH;
+        if (y > 185) { doc.addPage(); y = 20; }
+      });
+
+    } else {
+      // Mode : lignes = jours, colonnes = salaries
+      const dayLabelW = 30;
+      const nbEmps = Math.max(sortedEmps.length, 1);
+      const empColW = Math.min(36, Math.floor((pageW - dayLabelW) / nbEmps));
+
+      // --- EN-TETE : noms des employes ---
+      doc.setFillColor(108, 92, 231);
+      doc.setDrawColor(60, 40, 180);
+      doc.setLineWidth(0.4);
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
+
+      doc.rect(startX, y, dayLabelW, rowH, 'FD');
+      doc.text('Jour', startX+2, y+10);
+
+      sortedEmps.forEach((emp, i) => {
+        const x = startX + dayLabelW + i * empColW;
+        doc.rect(x, y, empColW, rowH, 'FD');
+        doc.setFontSize(7);
+        doc.text((emp.first_name+' '+emp.last_name).substring(0,12), x+2, y+10);
+        doc.setFontSize(9);
+      });
+      y += rowH;
+      doc.setFont('helvetica','normal');
+
+      // --- LIGNES PAR JOUR ---
+      weekDates.forEach((d, dayIdx) => {
+        const bgLight = [242,242,252];
+        const bgWhite = [255,255,255];
+        const bg = dayIdx%2===0 ? bgLight : bgWhite;
+
+        doc.setFillColor(...bg);
+        doc.setDrawColor(180,180,195);
+        doc.setLineWidth(0.3);
+        doc.setTextColor(30,30,30);
+
+        // Cellule jour : nom complet + numero
+        doc.rect(startX, y, dayLabelW, rowH, 'FD');
+        doc.setFont('helvetica','bold'); doc.setFontSize(8);
+        doc.text(FULL_DAYS[dayIdx], startX+2, y+7);
+        doc.text(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), startX+2, y+13);
+        doc.setFont('helvetica','normal');
+
+        // Cellules par employe
+        sortedEmps.forEach((emp, i) => {
+          const x = startX + dayLabelW + i * empColW;
+          const dayShifts = shifts.filter(s =>
+            String(s.employee_id)===String(emp.id) && s.work_date===fmtDate(d)
+          );
+          doc.setFillColor(...bg);
+          doc.rect(x, y, empColW, rowH, 'FD');
+
+          if (dayShifts.length > 0) {
+            const s = dayShifts[0];
+            const sh = SHIFTS.find(x=>x.id===s.shift_type);
+            if (s.shift_type==='off' || s.shift_type==='repos') {
+              doc.setTextColor(160,160,160); doc.setFontSize(7);
+              doc.text(sh?sh.label:'OFF', x+2, y+10);
+            } else {
+              doc.setTextColor(40,40,40);
+              doc.setFont('helvetica','bold'); doc.setFontSize(9);
+              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+10);
+              doc.setFont('helvetica','normal');
+            }
+            doc.setTextColor(30,30,30);
+          }
+        });
+        y += rowH;
+      });
+    }
+
+    doc.save('planning-'+activeService+'-'+fmtDate(monday)+'.pdf');
+  };
 
     if (viewMode === 'salarie-ligne') {
       // === EN-TETE COLONNES ===

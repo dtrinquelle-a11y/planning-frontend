@@ -14,15 +14,6 @@ import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
 
-// Timeout utilitaire
-function withTimeout(promise, ms, fallback) {
-  const sentinel = { timedOut: true, data: { session: null } };
-  return Promise.race([
-    promise,
-    new Promise(resolve => setTimeout(() => resolve(fallback !== undefined ? fallback : sentinel), ms))
-  ]);
-}
-
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
   const [session, setSession] = useState(null);
@@ -35,66 +26,46 @@ function AppInner() {
   useEffect(() => {
     if (isOnboarding) { setLoading(false); return; }
 
-    let resolved = false;
-    let didTimeout = false; // true si on a affiche le login apres un timeout
-
-    withTimeout(supabase.auth.getSession(), 8000).then(async (result) => {
-      if (resolved) return;
-
-      if (result && result.timedOut) {
-        console.warn('Supabase getSession timeout (8s) - passage au login');
-        resolved = true;
-        didTimeout = true;
-        setLoading(false);
-        return;
-      }
-
-      const sess = result?.data?.session ?? null;
-      resolved = true;
-      setSession(sess);
-      if (sess) {
-        await loadProfile(sess);
-      } else {
+    // Strategie simplifiee: utiliser UNIQUEMENT onAuthStateChange.
+    // L'evenement INITIAL_SESSION est fiable et arrive toujours en premier.
+    // On pose un timeout global de 12s au cas ou Supabase ne repond pas du tout.
+    let done = false;
+    const globalTimeout = setTimeout(() => {
+      if (!done) {
+        done = true;
+        console.warn('Timeout global 12s - passage au login');
         setLoading(false);
       }
-    }).catch((err) => {
-      console.error('getSession erreur:', err);
-      if (!resolved) { resolved = true; didTimeout = true; setLoading(false); }
-    });
+    }, 12000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, sess) => {
-      // INITIAL_SESSION: gere par getSession ci-dessus
       if (_event === 'INITIAL_SESSION') {
-        if (resolved) return;
-        resolved = true;
+        if (done) return;
+        done = true;
+        clearTimeout(globalTimeout);
         setSession(sess);
-        if (sess) await loadProfile(sess);
-        else setLoading(false);
+        if (sess) {
+          await loadProfile(sess);
+        } else {
+          setLoading(false);
+        }
         return;
       }
-
-      // Si on a affiche le login suite a un timeout, ignorer les evenements
-      // automatiques de Supabase qui arrivent en retard (SIGNED_IN automatique).
-      // On ne traite que les vrais SIGN_OUT ou les evenements declenches apres
-      // que l'utilisateur ait interagi avec le formulaire de login.
-      if (didTimeout && (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED')) {
-        console.warn('Evenement ' + _event + ' ignore apres timeout - attendre login manuel');
-        return;
-      }
-
-      // SIGNED_OUT: toujours traiter
+      // Evenements ulterieurs (SIGNED_IN apres login manuel, SIGNED_OUT, TOKEN_REFRESHED)
       if (_event === 'SIGNED_OUT') {
         setSession(null); setProfile(null); setPage(null); setLoading(false);
         return;
       }
-
-      // Autres evenements (PASSWORD_RECOVERY, USER_UPDATED, etc.)
+      if (_event === 'TOKEN_REFRESHED') return; // ignorer silencieusement
       setSession(sess);
       if (sess) await loadProfile(sess);
       else { setProfile(null); setLoading(false); }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(globalTimeout);
+      subscription.unsubscribe();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadProfile(sess) {
@@ -102,17 +73,16 @@ function AppInner() {
     const maxAttempts = 3;
     while (attempts < maxAttempts) {
       try {
-        if (attempts > 0) setLoadingMsg('Reconnexion en cours... (' + attempts + '/' + maxAttempts + ')');
-
-        const result = await withTimeout(
-          supabase.from('user_profiles').select('*, employees(*)').eq('id', sess.user.id).single(),
-          6000,
-          { timedOut: true }
+        if (attempts > 0) setLoadingMsg('Connexion lente, nouvelle tentative...');
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout profil (8s)')), 8000)
         );
-
-        if (result && result.timedOut) throw new Error('Timeout requete profil (6s)');
-
-        const { data, error } = result;
+        const queryPromise = supabase
+          .from('user_profiles')
+          .select('*, employees(*)')
+          .eq('id', sess.user.id)
+          .single();
+        const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
         if (error) throw error;
         setProfile(data);
         setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
@@ -121,13 +91,15 @@ function AppInner() {
       } catch (err) {
         attempts++;
         console.error('Tentative ' + attempts + ' echouee:', err.message);
-        if (attempts < maxAttempts) {
-          setLoadingMsg('Connexion lente, nouvelle tentative...');
-          await new Promise(r => setTimeout(r, 2000));
-        } else {
-          console.error('Echec apres ' + maxAttempts + ' tentatives');
+        if (attempts >= maxAttempts) {
+          // Echec total: deconnecter pour eviter un etat incoherent
+          console.error('Echec chargement profil - deconnexion');
+          await supabase.auth.signOut();
+          setSession(null); setProfile(null); setPage(null);
           setLoading(false);
+          return;
         }
+        await new Promise(r => setTimeout(r, 2000));
       }
     }
   }

@@ -441,9 +441,15 @@ export default function Planning({ profile }) {
       {/* Onglets services */}
       <div style={{display:'flex',gap:'6px',marginBottom:'14px',flexWrap:'wrap'}}>
         {SERVICES.map(s => (
-          <button key={s} onClick={()=>setActiveService(s)}
-            style={{padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:600, background:activeService===s?(C.purple||'#6C5CE7'):C.card, color:activeService===s?'#fff':C.text}}
-          >{s}</button>
+          <div key={s} style={{display:'flex',alignItems:'center',gap:'2px'}}>
+            <button onClick={()=>setActiveService(s)}
+              style={{padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:600, background:activeService===s?(C.purple||'#6C5CE7'):C.card, color:activeService===s?'#fff':C.text}}
+            >{s}</button>
+            {isAdmin && <button onClick={(e)=>{e.stopPropagation();setActiveService(s);setCheckedEmps([]);setShowAddMember(true);}}
+              style={{padding:'2px 7px',borderRadius:'10px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:700,background:activeService===s?(C.purple||'#6C5CE7'):C.border,color:activeService===s?'#fff':C.muted,lineHeight:'1.4'}}
+              title={'Ajouter un salarié dans '+s}
+            >+</button>}
+          </div>
         ))}
       </div>
 
@@ -631,10 +637,10 @@ export default function Planning({ profile }) {
       {showAddMember && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}} onClick={()=>setShowAddMember(false)}>
           <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'24px',width:'360px',maxHeight:'80vh',overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontWeight:700,fontSize:'15px',marginBottom:'4px',color:C.text}}>Membres du secteur {activeService}</div>
-            <div style={{fontSize:'12px',color:C.muted,marginBottom:'16px'}}>Cochez les salaries a afficher dans ce secteur</div>
+          <div style={{fontWeight:700,fontSize:'15px',marginBottom:'4px',color:C.text}}>Ajouter un salarié dans <span style={{color:C.purple}}>{activeService}</span></div>
+          <div style={{fontSize:'12px',color:C.muted,marginBottom:'16px'}}>Sélectionnez les salariés à afficher dans ce segment (les salariés hors-service apparaissent en premier)</div>
             <div style={{marginBottom:'16px'}}>
-              {employees.filter(e=>e.is_active!==false).map(emp => {
+          {[...employees.filter(e=>e.is_active!==false)].sort((a,b)=>{const inA=a.service===activeService||(a.services_secondaires&&a.services_secondaires.includes(activeService));const inB=b.service===activeService||(b.services_secondaires&&b.services_secondaires.includes(activeService));return inA-inB;}).map(emp => {
                 const currentMembers = sectorMembers[activeService] || [];
                 const isInService = emp.service===activeService || (emp.services_secondaires&&emp.services_secondaires.includes(activeService));
                 const isExtra = currentMembers.includes(emp.id) && !isInService;
@@ -655,7 +661,7 @@ export default function Planning({ profile }) {
                     </div>
                     <div>
                       <div style={{fontWeight:600,fontSize:'13px'}}>{emp.first_name} {emp.last_name}</div>
-                      <div style={{fontSize:'11px',color:C.muted}}>{emp.role} - {emp.service}{isInService?' (service principal)':isExtra?' (ajoute)':''}</div>
+                  <div style={{fontSize:'11px',color:C.muted}}>{emp.role} · <span style={{color:isInService?C.green:C.purple,fontWeight:600}}>{isInService?'✓ '+activeService:emp.service}</span></div>
                     </div>
                   </div>
                 );

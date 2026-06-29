@@ -171,7 +171,7 @@ function AppInner() {
         {page === 'timeline' && <Timeline profile={profile} />}
         {page === 'salarie' && <EspaceSalarie profile={profile} />}
         {page === 'qrcode' && isManager && <QRCodePage />}
-      {page === 'pointage' && <Pointeuse employeeId={profile?.employee_id} employeeName={(profile?.first_name||'')+' '+(profile?.last_name||'')} />}ployee_id} employeeName={(profile?.first_name||'')+' '+(profile?.last_name||'')} />}
+        {page === 'pointage' && <Pointeuse employeeId={profile?.employees?.id || profile?.employee_id} employeeName={(profile?.employees?.first_name || profile?.first_name || '') + ' ' + (profile?.employees?.last_name || profile?.last_name || '')} />}
         {page === 'ged' && isManager && <GED profile={profile} />}
         {page === 'dossiers' && isManager && <DossiersRH profile={profile} />}
       </div>

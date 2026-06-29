@@ -30,7 +30,16 @@ function fmtDate(d) { const p=n=>String(n).padStart(2,'0'); return d.getFullYear
 function addDays(d, n) { const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 const monthsFull = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
 
-// Pause legale CC HPA
+// Extrait HH:MM depuis un champ start_time/end_time qui peut etre:
+// - "HH:MM:SS" (format time PostgreSQL)
+// - "YYYY-MM-DDTHH:MM:SS" (ancien format datetime)
+// - "YYYY-MM-DDTHH:MM:SS.000Z" (ISO avec timezone)
+function extractTime(t) {
+  if (!t) return '00:00';
+  if (t.includes('T')) return t.slice(11, 16); // datetime -> HH:MM
+  return t.slice(0, 5); // time -> HH:MM
+}
+
 function calcPauseHPA(totalMinutes) {
   if (totalMinutes >= 540) return 45;
   if (totalMinutes >= 360) return 30;
@@ -38,10 +47,13 @@ function calcPauseHPA(totalMinutes) {
 }
 function calcShiftH(s) {
   if (!s || !s.start_time || !s.end_time) return 0;
-  const [sh,sm] = s.start_time.slice(11,16).split(':').map(Number);
-  const [eh,em] = s.end_time.slice(11,16).split(':').map(Number);
+  const isOff = s.shift_type === 'off' || s.shift_type === 'repos';
+  if (isOff) return 0;
+  const [sh,sm] = extractTime(s.start_time).split(':').map(Number);
+  const [eh,em] = extractTime(s.end_time).split(':').map(Number);
   let total = (eh*60+em)-(sh*60+sm);
   if (total < 0) total += 24*60;
+  if (total === 0) return 0;
   const pause = s.break_minutes ?? calcPauseHPA(total);
   return Math.max(0, (total - pause) / 60);
 }
@@ -66,7 +78,6 @@ export default function Planning({ profile }) {
   const [copyTargetOffset, setCopyTargetOffset] = useState(weekOffset+1);
   const [copyEmpId, setCopyEmpId] = useState('');
   const planningRef = useRef(null);
-  // Nouvelles features
   const [viewMode, setViewMode] = useState('salarie-ligne');
   const [empOrder, setEmpOrder] = useState({});
   const [showAddMember, setShowAddMember] = useState(false);
@@ -118,10 +129,7 @@ export default function Planning({ profile }) {
 
   const saveOrder = async (service, newOrder) => {
     try {
-      await supabase.from('planning_preferences').upsert(
-        { service, emp_order: newOrder },
-        { onConflict: 'service' }
-      );
+      await supabase.from('planning_preferences').upsert({ service, emp_order: newOrder }, { onConflict: 'service' });
       setEmpOrder(prev => ({...prev, [service]: newOrder}));
     } catch(e) {}
   };
@@ -130,9 +138,7 @@ export default function Planning({ profile }) {
     try {
       await supabase.from('planning_sector_members').delete().eq('service', service);
       if (empIds.length > 0) {
-        await supabase.from('planning_sector_members').insert(
-          empIds.map(id => ({ service, employee_id: id }))
-        );
+        await supabase.from('planning_sector_members').insert(empIds.map(id => ({ service, employee_id: id })));
       }
       setSectorMembers(prev => ({...prev, [service]: empIds}));
     } catch(e) {}
@@ -154,20 +160,23 @@ export default function Planning({ profile }) {
   };
   const sortedEmps = getSortedEmployees();
 
-  // CRUD shifts
+  // CRUD shifts - start_time/end_time envoyes au format "HH:MM:SS" (type time PostgreSQL)
   const createShift = async () => {
     if (!selEmp) return;
     const shift = SHIFTS.find(s => s.id === selShift);
     const dateStr = fmtDate(weekDates[selDay]);
-    const startDt = dateStr+'T'+(selShift==='custom'?customStart:shift.start)+':00';
-    const endDt = dateStr+'T'+(selShift==='custom'?customEnd:shift.end)+':00';
     const isOff = selShift === 'off' || selShift === 'repos';
+    const startTime = isOff ? '00:00:00' : (selShift==='custom' ? customStart+':00' : shift.start+':00');
+    const endTime   = isOff ? '00:00:00' : (selShift==='custom' ? customEnd+':00'   : shift.end+':00');
     try {
       await axios.post(API+'/schedules', {
-        employee_id: selEmp, work_date: dateStr,
-        start_time: isOff ? dateStr+'T00:00:00' : startDt,
-        end_time: isOff ? dateStr+'T00:00:00' : endDt,
-        shift_type: selShift, break_minutes: isOff ? 0 : undefined, note
+        employee_id: selEmp,
+        work_date: dateStr,
+        start_time: startTime,
+        end_time: endTime,
+        shift_type: selShift,
+        break_minutes: isOff ? 0 : undefined,
+        note
       });
       await loadShifts(); await loadMonthlySummary();
       setModal(null); setNote(''); showToast('Creneau cree');
@@ -186,10 +195,7 @@ export default function Planning({ profile }) {
   const copyWeek = async () => {
     const tgtMonday = getMonday(copyTargetOffset);
     const srcMonday = fmtDate(getMonday(weekOffset));
-    const srcShifts = shifts.filter(s => {
-      if (copyEmpId) return String(s.employee_id) === String(copyEmpId);
-      return true;
-    });
+    const srcShifts = copyEmpId ? shifts.filter(s => String(s.employee_id) === String(copyEmpId)) : shifts;
     let ok = 0;
     for (const s of srcShifts) {
       const srcDate = new Date(s.work_date);
@@ -201,8 +207,8 @@ export default function Planning({ profile }) {
         await axios.post(API+'/schedules', {
           employee_id: s.employee_id,
           work_date: tgtDate,
-          start_time: isOff ? tgtDate+'T00:00:00' : tgtDate+'T'+s.start_time.slice(11,16)+':00',
-          end_time: isOff ? tgtDate+'T00:00:00' : tgtDate+'T'+s.end_time.slice(11,16)+':00',
+          start_time: isOff ? '00:00:00' : extractTime(s.start_time)+':00',
+          end_time:   isOff ? '00:00:00' : extractTime(s.end_time)+':00',
           shift_type: s.shift_type,
           break_minutes: s.break_minutes,
           note: s.note
@@ -225,15 +231,15 @@ export default function Planning({ profile }) {
   const handleDrop = async (e, empId, dayIdx) => {
     e.preventDefault();
     if (!dragSrc) return;
-    if (dragSrc.employee_id === empId && dragSrc.dayIdx === dayIdx) return;
+    if (String(dragSrc.employee_id) === String(empId) && dragSrc.dayIdx === dayIdx) return;
     const newDate = fmtDate(weekDates[dayIdx]);
     const isOff = dragSrc.shift_type === 'off' || dragSrc.shift_type === 'repos';
     try {
       await axios.patch(API+'/schedules/'+dragSrc.id, {
         employee_id: empId,
         work_date: newDate,
-        start_time: isOff ? newDate+'T00:00:00' : newDate+'T'+dragSrc.start_time.slice(11,16)+':00',
-        end_time: isOff ? newDate+'T00:00:00' : newDate+'T'+dragSrc.end_time.slice(11,16)+':00',
+        start_time: isOff ? '00:00:00' : extractTime(dragSrc.start_time)+':00',
+        end_time:   isOff ? '00:00:00' : extractTime(dragSrc.end_time)+':00',
       });
       await loadShifts();
       showToast('Creneau deplace');
@@ -242,7 +248,7 @@ export default function Planning({ profile }) {
   };
   const handleDragEnd = () => setDragSrc(null);
 
-  // Reordering employes (drag sur lignes)
+  // Reordering employes
   const handleEmpDragStart = (e, empId) => {
     e.dataTransfer.setData('empId', String(empId));
     e.dataTransfer.effectAllowed = 'move';
@@ -262,35 +268,41 @@ export default function Planning({ profile }) {
     showToast('Ordre mis a jour');
   };
 
-  // Export PDF simplifie (sans compteurs d'heures - destine aux salaries)
+  // Heures semaine par salarie
+  const getEmpWeekHours = (empId) => {
+    const empShifts = shifts.filter(s => String(s.employee_id) === String(empId));
+    return calcHeuresEmp(empShifts);
+  };
+
+  // Heures mois depuis monthlySummary
+  const getEmpMonthHours = (empId) => {
+    const k = String(empId);
+    const entry = monthlySummary[k];
+    if (!entry) return null;
+    if (typeof entry === 'number') return entry;
+    if (entry.heures_planifiees !== undefined) return entry.heures_planifiees;
+    return null;
+  };
+
+  // Export PDF simplifie (sans compteurs d'heures)
   const exportPDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const mon = monday;
     const weekLabel = fmtDate(mon) + ' au ' + fmtDate(addDays(mon,6));
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(16);
+    doc.setFont('helvetica','bold'); doc.setFontSize(16);
     doc.text('Planning - ' + activeService, 14, 15);
-    doc.setFontSize(10);
-    doc.setFont('helvetica','normal');
+    doc.setFontSize(10); doc.setFont('helvetica','normal');
     doc.text('Semaine du ' + weekLabel, 14, 22);
-    const colW = 36;
-    const rowH = 14;
-    const startX = 14;
-    let y = 30;
-    doc.setFillColor(108, 92, 231);
-    doc.setTextColor(255,255,255);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(9);
+    const colW = 36; const rowH = 14; const startX = 14; let y = 30;
+    doc.setFillColor(108, 92, 231); doc.setTextColor(255,255,255);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
     if (viewMode === 'salarie-ligne') {
-      doc.rect(startX, y, 40, rowH, 'F');
-      doc.text('Salarie', startX+2, y+9);
+      doc.rect(startX, y, 40, rowH, 'F'); doc.text('Salarie', startX+2, y+9);
       weekDates.forEach((d,i) => {
-        const x = startX+40+i*colW;
-        doc.rect(x, y, colW, rowH, 'F');
+        const x = startX+40+i*colW; doc.rect(x, y, colW, rowH, 'F');
         doc.text(DAYS[i]+' '+d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0'), x+2, y+9);
       });
-      y += rowH;
-      doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      y += rowH; doc.setFont('helvetica','normal'); doc.setFontSize(8);
       sortedEmps.forEach((emp, ei) => {
         const bg = ei%2===0 ? [250,250,255] : [255,255,255];
         doc.setFillColor(...bg); doc.setTextColor(30,30,30);
@@ -299,34 +311,30 @@ export default function Planning({ profile }) {
         weekDates.forEach((d,dayIdx) => {
           const x = startX+40+dayIdx*colW;
           doc.setFillColor(...bg); doc.rect(x, y, colW, rowH, 'F');
-          const dayShifts = shifts.filter(s => s.employee_id===emp.id && s.work_date.slice(0,10)===fmtDate(d));
+          const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date.slice(0,10)===fmtDate(d));
           if (dayShifts.length > 0) {
             const s = dayShifts[0];
             const sh = SHIFTS.find(x=>x.id===s.shift_type);
-            if (s.shift_type === 'off' || s.shift_type === 'repos') {
-              doc.setTextColor(100,100,100); doc.text(sh ? sh.label : 'OFF', x+2, y+9);
+            if (s.shift_type==='off'||s.shift_type==='repos') {
+              doc.setTextColor(100,100,100); doc.text(sh?sh.label:'OFF', x+2, y+9);
             } else {
               doc.setTextColor(30,30,30);
               doc.text((sh?sh.label:s.shift_type), x+2, y+6);
-              doc.text(s.start_time.slice(11,16)+'-'+s.end_time.slice(11,16), x+2, y+12);
+              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+12);
             }
           }
           doc.setTextColor(30,30,30);
         });
-        y += rowH;
-        if (y > 185) { doc.addPage(); y = 20; }
+        y += rowH; if (y > 185) { doc.addPage(); y = 20; }
       });
     } else {
-      const empColW = Math.min(colW, (280 - 25) / Math.max(sortedEmps.length, 1));
-      doc.rect(startX, y, 25, rowH, 'F');
-      doc.text('Jour', startX+2, y+9);
+      const empColW = Math.min(colW, (280-25)/Math.max(sortedEmps.length,1));
+      doc.rect(startX, y, 25, rowH, 'F'); doc.text('Jour', startX+2, y+9);
       sortedEmps.forEach((emp,i) => {
-        const x = startX+25+i*empColW;
-        doc.rect(x, y, empColW, rowH, 'F');
+        const x = startX+25+i*empColW; doc.rect(x, y, empColW, rowH, 'F');
         doc.text((emp.first_name+' '+emp.last_name).substring(0,10), x+2, y+9);
       });
-      y += rowH;
-      doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      y += rowH; doc.setFont('helvetica','normal'); doc.setFontSize(8);
       weekDates.forEach((d, dayIdx) => {
         const bg = dayIdx%2===0 ? [250,250,255] : [255,255,255];
         doc.setFillColor(...bg); doc.setTextColor(30,30,30);
@@ -335,7 +343,7 @@ export default function Planning({ profile }) {
         sortedEmps.forEach((emp,i) => {
           const x = startX+25+i*empColW;
           doc.setFillColor(...bg); doc.rect(x, y, empColW, rowH, 'F');
-          const dayShifts = shifts.filter(s => s.employee_id===emp.id && s.work_date.slice(0,10)===fmtDate(d));
+          const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date.slice(0,10)===fmtDate(d));
           if (dayShifts.length > 0) {
             const s = dayShifts[0];
             const sh = SHIFTS.find(x=>x.id===s.shift_type);
@@ -343,7 +351,7 @@ export default function Planning({ profile }) {
               doc.setTextColor(100,100,100); doc.text(sh?sh.label:'OFF', x+2, y+9);
             } else {
               doc.setTextColor(30,30,30);
-              doc.text(s.start_time.slice(11,16)+'-'+s.end_time.slice(11,16), x+2, y+9);
+              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+9);
             }
           }
           doc.setTextColor(30,30,30);
@@ -354,7 +362,6 @@ export default function Planning({ profile }) {
     doc.save('planning-'+activeService+'-'+fmtDate(monday)+'.pdf');
   };
 
-  // Styles communs
   const inp = { padding:'6px 10px', borderRadius:'6px', border:'1px solid '+C.border, background:C.input, color:C.text, fontSize:'13px', width:'100%' };
   const lbl = { fontSize:'11px', fontWeight:600, color:C.muted, letterSpacing:'0.05em', display:'block', marginBottom:'4px' };
   const btn = (bg,fg) => ({ padding:'8px 14px', borderRadius:'8px', border:'none', background:bg, color:fg, cursor:'pointer', fontSize:'13px', fontWeight:500 });
@@ -368,23 +375,15 @@ export default function Planning({ profile }) {
         draggable={isAdmin}
         onDragStart={isAdmin ? (e)=>handleDragStart(e,{...s,dayIdx}) : undefined}
         onDragEnd={handleDragEnd}
-        style={{
-          background:def.bg, border:'1.5px solid '+def.border, borderRadius:'7px',
-          padding:'4px 7px', marginBottom:'3px', fontSize:'11px',
-          cursor: isAdmin ? 'grab' : 'default',
-          opacity: dragSrc && dragSrc.id===s.id ? 0.5 : 1,
-          transition:'opacity 0.15s'
-        }}
+        style={{ background:def.bg, border:'1.5px solid '+def.border, borderRadius:'7px', padding:'4px 7px', marginBottom:'3px', fontSize:'11px', cursor:isAdmin?'grab':'default', opacity:dragSrc&&dragSrc.id===s.id?0.5:1, transition:'opacity 0.15s' }}
       >
         <div style={{fontWeight:600, color:def.text}}>
-          {isOff ? def.label : (s.start_time.slice(11,16)+' - '+s.end_time.slice(11,16))}
+          {isOff ? def.label : (extractTime(s.start_time)+' - '+extractTime(s.end_time))}
         </div>
         {!isOff && <div style={{color:def.text,opacity:0.8}}>{def.label}{s.note?(' - '+s.note):''}</div>}
         {isOff && s.note && <div style={{color:def.text,opacity:0.7,fontSize:'10px'}}>{s.note}</div>}
         {isAdmin && (
-          <button onClick={()=>handleDeleteShift(s.id)}
-            style={{background:'none',border:'none',color:def.text,cursor:'pointer',fontSize:'10px',padding:'1px 4px',opacity:0.7}}
-          >x</button>
+          <button onClick={()=>handleDeleteShift(s.id)} style={{background:'none',border:'none',color:def.text,cursor:'pointer',fontSize:'10px',padding:'1px 4px',opacity:0.7}}>x</button>
         )}
       </div>
     );
@@ -393,17 +392,13 @@ export default function Planning({ profile }) {
   // Cellule droppable
   const renderCell = (emp, dayIdx) => {
     const d = weekDates[dayIdx];
-    const dayShifts = shifts.filter(s => s.employee_id===emp.id && s.work_date.slice(0,10)===fmtDate(d));
-    const isDropTarget = dragSrc && !(dragSrc.employee_id===emp.id && dragSrc.dayIdx===dayIdx);
+    const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date.slice(0,10)===fmtDate(d));
+    const isDropTarget = dragSrc && !(String(dragSrc.employee_id)===String(emp.id) && dragSrc.dayIdx===dayIdx);
     return (
       <td key={dayIdx}
         onDragOver={isAdmin ? handleDragOver : undefined}
         onDrop={isAdmin ? (e)=>handleDrop(e,emp.id,dayIdx) : undefined}
-        style={{
-          border:'1px solid '+C.border, padding:'4px', minWidth:'110px', verticalAlign:'top',
-          background: isDropTarget && dragSrc ? C.cardHover||'rgba(108,92,231,0.05)' : C.card,
-          transition:'background 0.15s'
-        }}
+        style={{ border:'1px solid '+C.border, padding:'4px', minWidth:'110px', verticalAlign:'top', background:isDropTarget&&dragSrc?C.cardHover||'rgba(108,92,231,0.05)':C.card, transition:'background 0.15s' }}
         onClick={() => { if (isAdmin && dayShifts.length===0) { setSelDay(dayIdx); setSelEmp(emp.id); setModal('create'); } }}
       >
         {dayShifts.map(s => renderShift(s, emp.id, dayIdx))}
@@ -416,15 +411,9 @@ export default function Planning({ profile }) {
 
   const weekLabel = monthsFull[monday.getMonth()]+' '+monday.getFullYear();
 
-  // Calcul total heures par salarie pour la semaine affichee
-  const getEmpWeekHours = (empId) => {
-    const empShifts = shifts.filter(s => s.employee_id === empId);
-    return calcHeuresEmp(empShifts);
-  };
-
   return (
     <div style={{padding:'16px', color:C.text}}>
-      {/* Header navigation semaine */}
+      {/* Header */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}>
         <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
           <button onClick={()=>setWeekOffset(w=>w-1)} style={btn(C.card,C.text)}>‹</button>
@@ -435,12 +424,7 @@ export default function Planning({ profile }) {
           <button onClick={()=>setWeekOffset(0)} style={{...btn(C.card,C.muted),fontSize:'11px'}}>Auj.</button>
         </div>
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-          {/* Toggle vue lignes/colonnes */}
-          <button
-            onClick={()=>setViewMode(v=>v==='salarie-ligne'?'salarie-colonne':'salarie-ligne')}
-            title={viewMode==='salarie-ligne'?'Passer en mode: jour en ligne':'Passer en mode: salarie en ligne'}
-            style={btn(C.card,C.text)}
-          >
+          <button onClick={()=>setViewMode(v=>v==='salarie-ligne'?'salarie-colonne':'salarie-ligne')} style={btn(C.card,C.text)}>
             {viewMode==='salarie-ligne' ? '⇄ Inverser vue' : '⇅ Vue normale'}
           </button>
           {isAdmin && (
@@ -458,9 +442,7 @@ export default function Planning({ profile }) {
       <div style={{display:'flex',gap:'6px',marginBottom:'14px',flexWrap:'wrap'}}>
         {SERVICES.map(s => (
           <button key={s} onClick={()=>setActiveService(s)}
-            style={{padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:600,
-              background:activeService===s?(C.purple||'#6C5CE7'):C.card,
-              color:activeService===s?'#fff':C.text}}
+            style={{padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:600, background:activeService===s?(C.purple||'#6C5CE7'):C.card, color:activeService===s?'#fff':C.text}}
           >{s}</button>
         ))}
       </div>
@@ -468,7 +450,6 @@ export default function Planning({ profile }) {
       {/* Grille planning */}
       <div ref={planningRef} style={{overflowX:'auto'}}>
         {viewMode === 'salarie-ligne' ? (
-          // MODE NORMAL: salaries en lignes, jours en colonnes
           <table style={{borderCollapse:'collapse',width:'100%',minWidth:'700px'}}>
             <thead>
               <tr>
@@ -481,14 +462,16 @@ export default function Planning({ profile }) {
                     <div style={{fontSize:'11px',color:C.muted}}>{d.getDate()}/{String(d.getMonth()+1).padStart(2,'0')}</div>
                   </th>
                 ))}
-                <th style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'70px',textAlign:'center'}}>
-                  <span style={{fontSize:'11px',color:C.muted}}>Total sem.</span>
+                <th style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'90px',textAlign:'center'}}>
+                  <div style={{fontSize:'11px',color:C.muted}}>Sem.</div>
+                  <div style={{fontSize:'10px',color:C.muted}}>/ Mois</div>
                 </th>
               </tr>
             </thead>
             <tbody>
               {sortedEmps.map((emp,ei) => {
                 const weekH = getEmpWeekHours(emp.id);
+                const monthH = getEmpMonthHours(emp.id);
                 return (
                   <tr key={emp.id}
                     draggable={isAdmin}
@@ -510,13 +493,13 @@ export default function Planning({ profile }) {
                       </div>
                     </td>
                     {weekDates.map((_,dayIdx) => renderCell(emp, dayIdx))}
-                    <td style={{border:'1px solid '+C.border,padding:'8px',textAlign:'center',verticalAlign:'middle'}}>
-                      <div style={{fontWeight:700,fontSize:'13px',color: weekH > 0 ? (C.purple||'#6C5CE7') : C.muted}}>
-                        {weekH > 0 ? weekH.toFixed(1)+'h' : '-'}
+                    <td style={{border:'1px solid '+C.border,padding:'6px 8px',textAlign:'center',verticalAlign:'middle'}}>
+                      <div style={{fontWeight:700,fontSize:'13px',color:weekH>0?(C.purple||'#6C5CE7'):C.muted}}>
+                        {weekH>0 ? weekH.toFixed(1)+'h' : '-'}
                       </div>
-                      {monthlySummary[emp.id] !== undefined && (
-                        <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>
-                          {typeof monthlySummary[emp.id] === 'number' ? monthlySummary[emp.id].toFixed(1)+'h/mois' : ''}
+                      {monthH !== null && (
+                        <div style={{fontSize:'10px',color:C.muted,marginTop:'2px',whiteSpace:'nowrap'}}>
+                          {monthH.toFixed(1)}h/mois
                         </div>
                       )}
                     </td>
@@ -526,27 +509,29 @@ export default function Planning({ profile }) {
             </tbody>
           </table>
         ) : (
-          // MODE INVERSE: jours en lignes, salaries en colonnes
           <table style={{borderCollapse:'collapse',width:'100%',minWidth:'700px'}}>
             <thead>
               <tr>
                 <th style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'80px',textAlign:'left'}}>
                   <span style={{fontSize:'11px',color:C.muted}}>Jour</span>
                 </th>
-                {sortedEmps.map((emp,ei) => (
-                  <th key={emp.id} style={{border:'1px solid '+C.border,padding:'6px',background:C.cardAlt||C.card,minWidth:'110px',textAlign:'center'}}>
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
-                      <div style={{width:'26px',height:'26px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'10px'}}>
-                        {initials(emp.first_name,emp.last_name)}
+                {sortedEmps.map((emp,ei) => {
+                  const weekH = getEmpWeekHours(emp.id);
+                  return (
+                    <th key={emp.id} style={{border:'1px solid '+C.border,padding:'6px',background:C.cardAlt||C.card,minWidth:'110px',textAlign:'center'}}>
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
+                        <div style={{width:'26px',height:'26px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'10px'}}>
+                          {initials(emp.first_name,emp.last_name)}
+                        </div>
+                        <div style={{fontWeight:600,fontSize:'11px'}}>{emp.first_name}</div>
+                        <div style={{fontSize:'10px',color:C.muted}}>{emp.last_name}</div>
+                        <div style={{fontSize:'10px',fontWeight:700,color:C.purple||'#6C5CE7'}}>
+                          {weekH>0 ? weekH.toFixed(1)+'h' : '-'}
+                        </div>
                       </div>
-                      <div style={{fontWeight:600,fontSize:'11px'}}>{emp.first_name}</div>
-                      <div style={{fontSize:'10px',color:C.muted}}>{emp.last_name}</div>
-                      <div style={{fontSize:'10px',fontWeight:700,color:C.purple||'#6C5CE7'}}>
-                        {getEmpWeekHours(emp.id) > 0 ? getEmpWeekHours(emp.id).toFixed(1)+'h' : '-'}
-                      </div>
-                    </div>
-                  </th>
-                ))}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -642,7 +627,7 @@ export default function Planning({ profile }) {
         </div>
       )}
 
-      {/* Modal ajout membre au secteur */}
+      {/* Modal ajout membre */}
       {showAddMember && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}} onClick={()=>setShowAddMember(false)}>
           <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'24px',width:'360px',maxHeight:'80vh',overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
@@ -660,11 +645,8 @@ export default function Planning({ profile }) {
                       checked={!!checkedEmps.length ? checkedEmps.includes(emp.id) : checked}
                       disabled={isInService}
                       onChange={e => {
-                        if (e.target.checked) {
-                          setCheckedEmps(prev => prev.length===0 ? [...(sectorMembers[activeService]||[]),emp.id] : [...prev,emp.id]);
-                        } else {
-                          setCheckedEmps(prev => (prev.length===0 ? (sectorMembers[activeService]||[]) : prev).filter(id=>id!==emp.id));
-                        }
+                        if (e.target.checked) { setCheckedEmps(prev => prev.length===0 ? [...(sectorMembers[activeService]||[]),emp.id] : [...prev,emp.id]); }
+                        else { setCheckedEmps(prev => (prev.length===0?(sectorMembers[activeService]||[]):prev).filter(id=>id!==emp.id)); }
                       }}
                       style={{width:'16px',height:'16px',cursor:isInService?'default':'pointer'}}
                     />
@@ -682,7 +664,7 @@ export default function Planning({ profile }) {
             <div style={{display:'flex',gap:'8px'}}>
               <button onClick={()=>{setShowAddMember(false);setCheckedEmps([]);}} style={{flex:1,...btn('none',C.muted),border:'1px solid '+C.border,padding:'8px',borderRadius:'6px',cursor:'pointer'}}>Annuler</button>
               <button onClick={async()=>{
-                const toSave = checkedEmps.length > 0 ? checkedEmps : (sectorMembers[activeService]||[]);
+                const toSave = checkedEmps.length>0 ? checkedEmps : (sectorMembers[activeService]||[]);
                 await saveSectorMembers(activeService, toSave);
                 setShowAddMember(false); setCheckedEmps([]);
                 showToast('Membres mis a jour');
@@ -692,7 +674,7 @@ export default function Planning({ profile }) {
         </div>
       )}
 
-      {/* Toast notification */}
+      {/* Toast */}
       {toast && (
         <div style={{position:'fixed',bottom:'24px',right:'24px',background:toast.type==='error'?'#EF4444':C.green||'#10B981',color:'#fff',borderRadius:'8px',padding:'10px 16px',fontSize:'13px',fontWeight:600,zIndex:200,boxShadow:'0 4px 12px rgba(0,0,0,0.2)'}}>
           {toast.msg}

@@ -284,43 +284,79 @@ export default function Planning({ profile }) {
     return null;
   };
 
-  // Export PDF simplifie (sans compteurs d'heures)
+  // Export PDF ameliore - avec bordures, jours + numero, horaires en gros, lignes alternees, titre enrichi
   const exportPDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const mon = monday;
     const weekLabel = fmtDate(mon) + ' au ' + fmtDate(addDays(mon,6));
-    doc.setFont('helvetica','bold'); doc.setFontSize(16);
-    doc.text('Planning - ' + activeService, 14, 15);
-    doc.setFontSize(10); doc.setFont('helvetica','normal');
-    doc.text('Semaine du ' + weekLabel, 14, 22);
-    const colW = 36; const rowH = 14; const startX = 14; let y = 30;
-    doc.setFillColor(108, 92, 231); doc.setTextColor(255,255,255);
-    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+
+    // === TITRE PRINCIPAL EN GROS ===
+    doc.setFont('helvetica','bold'); doc.setFontSize(20);
+    doc.setTextColor(108, 92, 231);
+    doc.text('PLANNING ' + activeService.toUpperCase(), 14, 14);
+    doc.setFontSize(13); doc.setFont('helvetica','bold');
+    doc.setTextColor(60, 60, 60);
+    doc.text('Semaine du ' + weekLabel, 14, 23);
+    doc.setTextColor(30,30,30);
+
+    // Ligne decorative sous le titre
+    doc.setDrawColor(108, 92, 231); doc.setLineWidth(0.8);
+    doc.line(14, 26, 283, 26);
+
+    const colW = 36; const rowH = 16; const startX = 14; let y = 32;
+    const FULL_DAYS = ['LUNDI','MARDI','MERCREDI','JEUDI','VENDREDI','SAMEDI','DIMANCHE'];
+
+    // Fonction pour dessiner les bordures de toutes les cellules d'une ligne
+    const drawRowBorders = (startXr, totalW, yRow, h) => {
+      doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
+      doc.rect(startXr, yRow, totalW, h, 'S');
+    };
+
     if (viewMode === 'salarie-ligne') {
-      doc.rect(startX, y, 40, rowH, 'F'); doc.text('Salarie', startX+2, y+9);
+      // === EN-TETE COLONNES ===
+      doc.setFillColor(108, 92, 231); doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      // Colonne "Salarié"
+      doc.rect(startX, y, 40, rowH, 'FD');
+      doc.text('Salarie', startX+2, y+10);
+      // Colonnes jours
       weekDates.forEach((d,i) => {
-        const x = startX+40+i*colW; doc.rect(x, y, colW, rowH, 'F');
-        doc.text(DAYS[i]+' '+d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0'), x+2, y+9);
+        const x = startX+40+i*colW;
+        doc.rect(x, y, colW, rowH, 'FD');
+        doc.setFontSize(8); doc.setFont('helvetica','bold');
+        const dayLabel = FULL_DAYS[i] || DAYS[i];
+        const dateLabel = String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+        doc.text(dayLabel, x+2, y+7);
+        doc.text(dateLabel, x+2, y+13);
+        doc.setFontSize(9);
       });
-      y += rowH; doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      y += rowH;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8);
+
+      // === LIGNES SALARIES ===
       sortedEmps.forEach((emp, ei) => {
-        const bg = ei%2===0 ? [250,250,255] : [255,255,255];
+        const bg = ei%2===0 ? [245,245,252] : [255,255,255];
         doc.setFillColor(...bg); doc.setTextColor(30,30,30);
-        doc.rect(startX, y, 40, rowH, 'F');
-        doc.text(emp.first_name+' '+emp.last_name, startX+2, y+9);
+        // Cellule nom
+        doc.rect(startX, y, 40, rowH, 'FD');
+        doc.setFont('helvetica','bold'); doc.setFontSize(8);
+        doc.text(emp.first_name+' '+emp.last_name, startX+2, y+10);
+        doc.setFont('helvetica','normal');
         weekDates.forEach((d,dayIdx) => {
           const x = startX+40+dayIdx*colW;
-          doc.setFillColor(...bg); doc.rect(x, y, colW, rowH, 'F');
-          const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date.slice(0,10)===fmtDate(d));
+          const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date===fmtDate(d));
+          doc.setFillColor(...bg); doc.rect(x, y, colW, rowH, 'FD');
           if (dayShifts.length > 0) {
             const s = dayShifts[0];
             const sh = SHIFTS.find(x=>x.id===s.shift_type);
             if (s.shift_type==='off'||s.shift_type==='repos') {
-              doc.setTextColor(100,100,100); doc.text(sh?sh.label:'OFF', x+2, y+9);
+              doc.setTextColor(150,150,150); doc.setFontSize(8);
+              doc.text(sh?sh.label:'OFF', x+2, y+10);
             } else {
               doc.setTextColor(30,30,30);
-              doc.text((sh?sh.label:s.shift_type), x+2, y+6);
-              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+12);
+              doc.setFontSize(9); doc.setFont('helvetica','bold');
+              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+10);
+              doc.setFont('helvetica','normal'); doc.setFontSize(8);
             }
           }
           doc.setTextColor(30,30,30);
@@ -329,29 +365,45 @@ export default function Planning({ profile }) {
       });
     } else {
       const empColW = Math.min(colW, (280-25)/Math.max(sortedEmps.length,1));
-      doc.rect(startX, y, 25, rowH, 'F'); doc.text('Jour', startX+2, y+9);
+      // === EN-TETE - colonne "Jour" + noms employes ===
+      doc.setFillColor(108, 92, 231); doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      doc.rect(startX, y, 25, rowH, 'FD'); doc.text('Jour', startX+2, y+10);
       sortedEmps.forEach((emp,i) => {
-        const x = startX+25+i*empColW; doc.rect(x, y, empColW, rowH, 'F');
-        doc.text((emp.first_name+' '+emp.last_name).substring(0,10), x+2, y+9);
+        const x = startX+25+i*empColW;
+        doc.rect(x, y, empColW, rowH, 'FD');
+        doc.setFontSize(7);
+        doc.text((emp.first_name+' '+emp.last_name).substring(0,12), x+2, y+10);
+        doc.setFontSize(9);
       });
       y += rowH; doc.setFont('helvetica','normal'); doc.setFontSize(8);
+
+      // === LIGNES PAR JOUR ===
       weekDates.forEach((d, dayIdx) => {
-        const bg = dayIdx%2===0 ? [250,250,255] : [255,255,255];
+        const bg = dayIdx%2===0 ? [245,245,252] : [255,255,255];
         doc.setFillColor(...bg); doc.setTextColor(30,30,30);
-        doc.rect(startX, y, 25, rowH, 'F');
-        doc.text(DAYS[dayIdx]+' '+d.getDate()+'/'+String(d.getMonth()+1).padStart(2,'0'), startX+2, y+9);
+        // Cellule jour avec nom complet + numero
+        doc.rect(startX, y, 25, rowH, 'FD');
+        doc.setFont('helvetica','bold'); doc.setFontSize(7);
+        const fullDay = FULL_DAYS[dayIdx] || DAYS[dayIdx];
+        doc.text(fullDay, startX+2, y+7);
+        doc.text(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), startX+2, y+13);
+        doc.setFont('helvetica','normal');
         sortedEmps.forEach((emp,i) => {
           const x = startX+25+i*empColW;
-          doc.setFillColor(...bg); doc.rect(x, y, empColW, rowH, 'F');
-          const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date.slice(0,10)===fmtDate(d));
+          const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date===fmtDate(d));
+          doc.setFillColor(...bg); doc.rect(x, y, empColW, rowH, 'FD');
           if (dayShifts.length > 0) {
             const s = dayShifts[0];
             const sh = SHIFTS.find(x=>x.id===s.shift_type);
             if (s.shift_type==='off'||s.shift_type==='repos') {
-              doc.setTextColor(100,100,100); doc.text(sh?sh.label:'OFF', x+2, y+9);
+              doc.setTextColor(150,150,150); doc.setFontSize(7);
+              doc.text(sh?sh.label:'OFF', x+2, y+10);
             } else {
               doc.setTextColor(30,30,30);
-              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+9);
+              doc.setFontSize(9); doc.setFont('helvetica','bold');
+              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+10);
+              doc.setFont('helvetica','normal'); doc.setFontSize(8);
             }
           }
           doc.setTextColor(30,30,30);

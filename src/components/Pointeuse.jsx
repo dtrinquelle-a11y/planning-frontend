@@ -18,6 +18,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
   const [step, setStep] = useState('main');
   const [pendingAction, setPendingAction] = useState(null);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [photoEnabled, setPhotoEnabled] = useState(true); // reglage admin, mode test
   const [cameraError, setCameraError] = useState('');
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -28,6 +29,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
   useEffect(() => {
     loadTodayLogs();
     checkGeolocation();
+    loadPhotoSetting();
     return () => stopCamera();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -37,6 +39,13 @@ export default function Pointeuse({ employeeId, employeeName }) {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), duration);
   }
+
+    async function loadPhotoSetting() {
+        try {
+            const r = await axios.get(API+'/settings/pointeuse_photo_enabled');
+            setPhotoEnabled(r.data.value === null ? true : r.data.value === 'true');
+        } catch (e) { setPhotoEnabled(true); }
+    }
 
   async function loadTodayLogs() {
     try {
@@ -93,16 +102,18 @@ export default function Pointeuse({ employeeId, employeeName }) {
   function retakePhoto() { setCapturedPhoto(null); startCamera(pendingAction); }
   function cancelPhoto() { stopCamera(); setCapturedPhoto(null); setPendingAction(null); setStep('main'); }
 
-  async function confirmAndPoint() {
+  async function confirmAndPoi(actionOverride, photoOverride){
     if (loading) return;
     setLoading(true);
+      const actionToUse = actionOverride !== undefined ? actionOverride : pendingAction;
+      const photoToUse = photoOverride !== undefined ? photoOverride : capturedPhoto;
 
     try {
       // Envoyer photo en base64 au backend — c'est lui qui gère l'upload Supabase
       const body = {
         employee_id: employeeId,
-        action: pendingAction,
-        photo_base64: capturedPhoto || null, // base64 JPEG ou null
+        action: actionToUse,
+        photo_base64: photoToUse || null, // base64 JPEG ou null
       };
       if (position) {
         body.latitude = position.lat;
@@ -111,11 +122,11 @@ export default function Pointeuse({ employeeId, employeeName }) {
       }
 
       const r = await axios.post(API+'/timeclock/scan', body);
-      setLastAction(pendingAction);
+      setLastAction(actionToUse);
 
       if (r.data.photo_warning) {
         showToast('⚠️ Photo non sauvegardée — pointage enregistré', C.amber, 5000);
-      } else if (capturedPhoto) {
+      } else if (photoToUse) {
         showToast('✓ ' + (r.data.message || 'Pointage enregistré') + ' · Photo OK', C.green);
       } else {
         showToast(r.data.message || 'Pointage enregistré');
@@ -129,6 +140,11 @@ export default function Pointeuse({ employeeId, employeeName }) {
       showToast('❌ ' + (err.response?.data?.error || err.message), C.red, 5000);
     } finally { setLoading(false); }
   }
+
+    function handlePointClick(action) {
+        if (photoEnabled) { startCamera(action); }
+        else { setPendingAction(action); confirmAndPoint(action, null); }
+    }
 
   const canPointIn = !lastAction || lastAction === 'out';
   const canPointOut = lastAction === 'in';
@@ -171,11 +187,11 @@ export default function Pointeuse({ employeeId, employeeName }) {
           )}
 
           <div style={{width:'100%',maxWidth:'400px',display:'flex',flexDirection:'column',gap:'10px',marginBottom:'20px'}}>
-            <button onClick={()=>startCamera('in')} disabled={!canPointIn}
+            <button onClick={()=>handlePointClick('in')} disabled={!canPointIn}
               style={{width:'100%',padding:'18px',borderRadius:'12px',border:'none',background:canPointIn?C.green:C.border,color:canPointIn?'#fff':C.muted,fontSize:'15px',fontWeight:600,cursor:canPointIn?'pointer':'not-allowed',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
               📷 Pointer l'arrivée
             </button>
-            <button onClick={()=>startCamera('out')} disabled={!canPointOut}
+            <button onClick={()=>handlePointClick('out')} disabled={!canPointOut}
               style={{width:'100%',padding:'18px',borderRadius:'12px',border:'none',background:canPointOut?C.red:C.border,color:canPointOut?'#fff':C.muted,fontSize:'15px',fontWeight:600,cursor:canPointOut?'pointer':'not-allowed',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
               📷 Pointer le départ
             </button>

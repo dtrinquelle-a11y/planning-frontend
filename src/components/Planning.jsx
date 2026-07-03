@@ -361,7 +361,7 @@ export default function Planning({ profile }) {
         weekDates.forEach((d, dayIdx) => {
           const x = startX + nameColW + dayIdx * colW;
           const dayShifts = shifts.filter(s =>
-            String(s.employee_id)===String(emp.id) && s.work_date===fmtDate(d)
+            String(s.employee_id)===String(emp.id) && s.work_date && s.work_date.slice(0,10)===fmtDate(d)
           );
           doc.setFillColor(...bg);
           doc.rect(x, y, colW, rowH, 'FD');
@@ -433,7 +433,7 @@ export default function Planning({ profile }) {
         sortedEmps.forEach((emp, i) => {
           const x = startX + dayLabelW + i * empColW;
           const dayShifts = shifts.filter(s =>
-            String(s.employee_id)===String(emp.id) && s.work_date===fmtDate(d)
+            String(s.employee_id)===String(emp.id) && s.work_date && s.work_date.slice(0,10)===fmtDate(d)
           );
           doc.setFillColor(...bg);
           doc.rect(x, y, empColW, rowH, 'FD');

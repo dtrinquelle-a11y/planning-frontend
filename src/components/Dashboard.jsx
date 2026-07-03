@@ -28,6 +28,8 @@ export default function Dashboard() {
   const [presence, setPresence] = useState([]);
   const [todayLogs, setTodayLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [photoEnabled, setPhotoEnabled] = useState(true);
+  const [savingPhotoSetting, setSavingPhotoSetting] = useState(false);
 
   useEffect(() => {
     async function fetchAll() {
@@ -46,7 +48,20 @@ export default function Dashboard() {
       finally { setLoading(false); }
     }
     fetchAll();
+    axios.get(API + '/settings/pointeuse_photo_enabled').then(r => {
+      setPhotoEnabled(r.data.value === null ? true : r.data.value === 'true');
+    }).catch(() => {});
   }, []);
+
+            async function togglePhotoSetting() {
+                const newValue = !photoEnabled;
+                setSavingPhotoSetting(true);
+                try {
+                    await axios.put(API + '/settings/pointeuse_photo_enabled', { value: newValue });
+                    setPhotoEnabled(newValue);
+                } catch (err) { console.error('Erreur maj reglage photo'); }
+                finally { setSavingPhotoSetting(false); }
+            }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", color: C.muted, fontSize: '13px' }}>
@@ -115,7 +130,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div style={s.twoCol}>
+        <div style={{ ...s.card, marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}><div><div style={s.cardTitle}>Pointeuse - Mode test</div><div style={{ fontSize: '12px', color: C.muted, marginTop: '4px' }}>{photoEnabled ? 'Photo obligatoire au pointage (comportement normal).' : 'Photo desactivee - les salaries pointent sans prendre de photo.'}</div></div><button onClick={togglePhotoSetting} disabled={savingPhotoSetting} style={{ padding: '10px 18px', borderRadius: '20px', border: 'none', cursor: savingPhotoSetting ? 'not-allowed' : 'pointer', background: photoEnabled ? C.green : C.border, color: photoEnabled ? '#fff' : C.muted, fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', minWidth: '160px' }}>{savingPhotoSetting ? '...' : (photoEnabled ? 'Photo activee' : 'Photo desactivee')}</button></div><div style={s.twoCol}>
           <div style={s.card}>
             <div style={s.cardTitle}>Modulation annuelle CC HPA</div>
             {modulation.length === 0 ? (

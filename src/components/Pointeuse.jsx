@@ -102,7 +102,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
   function retakePhoto() { setCapturedPhoto(null); startCamera(pendingAction); }
   function cancelPhoto() { stopCamera(); setCapturedPhoto(null); setPendingAction(null); setStep('main'); }
 
-  async function confirmAndPoi(actionOverride, photoOverride){
+  async function confirmAndPoint(actionOverride, photoOverride){
     if (loading) return;
     setLoading(true);
       const actionToUse = actionOverride !== undefined ? actionOverride : pendingAction;

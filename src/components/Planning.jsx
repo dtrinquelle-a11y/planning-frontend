@@ -318,10 +318,10 @@ export default function Planning({ profile }) {
       const colW = Math.floor((pageW - nameColW) / 7); // ~33mm par jour
 
       // --- EN-TETE : fond violet, jours avec nom complet + numero ---
-      doc.setFillColor(108, 92, 231);
+      doc.setFillColor(255, 255, 255);
       doc.setDrawColor(60, 40, 180);
       doc.setLineWidth(0.4);
-      doc.setTextColor(255,255,255);
+      doc.setTextColor(0,0,0);
       doc.setFont('helvetica','bold');
 
       // Cellule "Salarie"
@@ -331,7 +331,7 @@ export default function Planning({ profile }) {
 
       // Cellules jours
       weekDates.forEach((d, i) => {
-        const x = startX + nameColW + i * colW; doc.setFillColor(108,92,231); doc.setDrawColor(60,40,180); doc.setLineWidth(0.4); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+        const x = startX + nameColW + i * colW; doc.setFillColor(255,255,255); doc.setDrawColor(60,40,180); doc.setLineWidth(0.4); doc.setTextColor(0,0,0); doc.setFont('helvetica','bold');
         doc.rect(x, y, colW, rowH, 'FD');
         doc.setFontSize(8);
         doc.text(FULL_DAYS[i], x+2, y+7);
@@ -392,17 +392,17 @@ export default function Planning({ profile }) {
       const empColW = Math.min(36, Math.floor((pageW - dayLabelW) / nbEmps));
 
       // --- EN-TETE : noms des employes ---
-      doc.setFillColor(108, 92, 231);
+      doc.setFillColor(255, 255, 255);
       doc.setDrawColor(60, 40, 180);
       doc.setLineWidth(0.4);
-      doc.setTextColor(255,255,255);
+      doc.setTextColor(0,0,0);
       doc.setFont('helvetica','bold'); doc.setFontSize(9);
 
       doc.rect(startX, y, dayLabelW, rowH, 'FD');
       doc.text('Jour', startX+2, y+10);
 
       sortedEmps.forEach((emp, i) => {
-        const x = startX + dayLabelW + i * empColW;
+        const x = startX + dayLabelW + i * empColW; doc.setFillColor(255,255,255); doc.setDrawColor(60,40,180); doc.setLineWidth(0.4); doc.setTextColor(0,0,0); doc.setFont('helvetica','bold');
         doc.rect(x, y, empColW, rowH, 'FD');
         doc.setFontSize(7);
         doc.text((emp.first_name+' '+emp.last_name).substring(0,12), x+2, y+10);

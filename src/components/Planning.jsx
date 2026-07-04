@@ -331,7 +331,7 @@ export default function Planning({ profile }) {
 
       // Cellules jours
       weekDates.forEach((d, i) => {
-        const x = startX + nameColW + i * colW;
+        const x = startX + nameColW + i * colW; doc.setFillColor(108,92,231); doc.setDrawColor(60,40,180); doc.setLineWidth(0.4); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
         doc.rect(x, y, colW, rowH, 'FD');
         doc.setFontSize(8);
         doc.text(FULL_DAYS[i], x+2, y+7);

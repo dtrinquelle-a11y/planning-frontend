@@ -1,6 +1,6 @@
 /* eslint-disable */
 import HelpPanel from './components/HelpPanel';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import supabase from './supabase';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import Login from './components/Login';
@@ -22,6 +22,8 @@ function AppInner() {
   const [loadingMsg, setLoadingMsg] = useState('Chargement...');
   const [page, setPage] = useState(null);
   const isOnboarding = window.location.pathname === '/onboarding';
+  const authRequestId = useRef(0);
+  const justLoggedInRef = useRef(false);
 
   useEffect(() => {
     if (isOnboarding) { setLoading(false); return; }
@@ -38,28 +40,38 @@ function AppInner() {
       }
     }, 12000);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, sess) => {
-      if (_event === 'INITIAL_SESSION') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, sess) => {
+      if (event === 'INITIAL_SESSION') {
         if (done) return;
         done = true;
         clearTimeout(globalTimeout);
         setSession(sess);
         if (sess) {
-          await loadProfile(sess);
+          authRequestId.current += 1;
+          await loadProfile(sess, authRequestId.current);
         } else {
           setLoading(false);
         }
         return;
       }
       // Evenements ulterieurs (SIGNED_IN apres login manuel, SIGNED_OUT, TOKEN_REFRESHED)
-      if (_event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT') {
+        authRequestId.current += 1;
         setSession(null); setProfile(null); setPage(null); setLoading(false);
         return;
       }
-      if (_event === 'TOKEN_REFRESHED') return; // ignorer silencieusement
+      if (event === 'TOKEN_REFRESHED') return; // ignorer silencieusement
+      if (event === 'SIGNED_IN' && justLoggedInRef.current) {
+        // Login manuel deja traite directement par handleLogin: on evite une 2e requete concurrente
+        justLoggedInRef.current = false;
+        setSession(sess);
+        return;
+      }
       setSession(sess);
-      if (sess) await loadProfile(sess);
-      else { setProfile(null); setLoading(false); }
+      if (sess) {
+        authRequestId.current += 1;
+        await loadProfile(sess, authRequestId.current);
+      } else { setProfile(null); setLoading(false); }
     });
 
     return () => {
@@ -68,7 +80,7 @@ function AppInner() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadProfile(sess) {
+  async function loadProfile(sess, requestId) {
     let attempts = 0;
     const maxAttempts = 3;
     while (attempts < maxAttempts) {
@@ -84,6 +96,7 @@ function AppInner() {
           .single();
         const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
         if (error) throw error;
+        if (requestId !== authRequestId.current) return; // une requete plus recente a deja pris le relais
         setProfile(data);
         setPage(data?.role === 'salarie' ? 'salarie' : 'dashboard');
         setLoading(false);
@@ -91,12 +104,15 @@ function AppInner() {
       } catch (err) {
         attempts++;
         console.error('Tentative ' + attempts + ' echouee:', err.message);
+        if (requestId !== authRequestId.current) return; // requete obsolete, on abandonne silencieusement
         if (attempts >= maxAttempts) {
           // Echec total: deconnecter pour eviter un etat incoherent
           console.error('Echec chargement profil - deconnexion');
           await supabase.auth.signOut();
-          setSession(null); setProfile(null); setPage(null);
-          setLoading(false);
+          if (requestId === authRequestId.current) {
+            setSession(null); setProfile(null); setPage(null);
+            setLoading(false);
+          }
           return;
         }
         await new Promise(r => setTimeout(r, 2000));
@@ -105,8 +121,11 @@ function AppInner() {
   }
 
   function handleLogin({ session, profile }) {
+    authRequestId.current += 1; // invalide toute requete de profil en cours (ex: retry sur connexion lente)
+    justLoggedInRef.current = true;
     setSession(session); setProfile(profile);
     setPage(profile?.role === 'salarie' ? 'salarie' : 'dashboard');
+    setLoading(false);
   }
 
   async function handleLogout() {

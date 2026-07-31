@@ -8,7 +8,7 @@ const DARK = {
 };
 
 const LIGHT = {
-  bg: '#F4F6FA', card: '#FFFFFF', border: '#E2E5ED', borderLight: '#F0F2F7',
+  bg: '#FFFFFF', card: '#FFFFFF', border: '#E2E5ED', borderLight: '#F0F2F7',
   text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD', green: '#16A34A',
   amber: '#D97706', red: '#DC2626', purpleLight: '#EEF2FF', greenLight: '#F0FDF4',
   amberLight: '#FFFBEB', redLight: '#FEF2F2', shadow: 'rgba(0,0,0,0.08)',
@@ -17,7 +17,7 @@ const LIGHT = {
 const ThemeContext = createContext({ colors: DARK, darkMode: true, toggle: () => {} });
 
 export function ThemeProvider({ children }) {
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   return (
     <ThemeContext.Provider value={{ colors: darkMode ? DARK : LIGHT, darkMode, toggle: () => setDarkMode(d => !d) }}>
       {children}

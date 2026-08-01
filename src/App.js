@@ -14,7 +14,6 @@ import GED from './components/GED';
 import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
-import Parametrage from './components/Parametrage';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -164,11 +163,12 @@ function AppInner() {
         { id: 'pointage', label: 'Pointeuse' },
         { id: 'ged', label: 'Documents' },
         { id: 'dossiers', label: 'Dossiers RH' },
+        { id: 'parametrage', label: 'Paramétrage' },
       ]
     : [
         { id: 'salarie', label: 'Mon Planning' },
         { id: 'pointage', label: 'Pointeuse' },
-        { id: 'parametrage', label: 'Paramétrage' },
+        
       ];
 
   return (

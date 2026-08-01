@@ -1,5 +1,4 @@
-/* eslint-disable */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
@@ -9,17 +8,17 @@ import supabase from '../supabase';
 const API = 'https://mon-planning-production.up.railway.app/api';
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const SHIFTS = [
+
+const DEFAULT_SHIFTS = [
   { id: 'matin', label: 'Matin', start: '07:00', end: '13:00', bg: '#EEF2FF', border: '#7C6FCD', text: '#4338CA' },
   { id: 'apres_midi', label: 'Apres-midi', start: '13:00', end: '19:00', bg: '#F0FDF4', border: '#2DB87A', text: '#166534' },
   { id: 'journee', label: 'Journee', start: '09:00', end: '17:00', bg: '#FFFBEB', border: '#F5A623', text: '#92400E' },
   { id: 'soir', label: 'Soir', start: '18:00', end: '23:30', bg: '#FEF2F2', border: '#E85D5D', text: '#991B1B' },
-  { id: 'custom', label: 'Personalise', start: '08:00', end: '16:00', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
-  { id: 'off', label: 'OFF', start: '00:00', end: '00:00', bg: '#F1F5F9', border: '#94A3B8', text: '#475569' },
+  { id: 'custom', label: 'Personnalise', start: '08:00', end: '16:00', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
   { id: 'repos', label: 'Repos', start: '00:00', end: '00:00', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },
 ];
-const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 
+const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 function initials(f, l) { return (f?.[0]||'')+(l?.[0]||''); }
 function getMonday(offset) {
   const now = new Date(); const day = now.getDay();
@@ -28,763 +27,634 @@ function getMonday(offset) {
 }
 function fmtDate(d) { const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function addDays(d, n) { const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+const months = ['jan','fev','mars','avr','mai','juin','juil','aout','sep','oct','nov','dec'];
 const monthsFull = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
-
-// Extrait HH:MM depuis un champ start_time/end_time qui peut etre:
-// - "HH:MM:SS" (format time PostgreSQL)
-// - "YYYY-MM-DDTHH:MM:SS" (ancien format datetime)
-// - "YYYY-MM-DDTHH:MM:SS.000Z" (ISO avec timezone)
-function extractTime(t) {
-  if (!t) return '00:00';
-  if (t.includes('T')) return t.slice(11, 16); // datetime -> HH:MM
-  return t.slice(0, 5); // time -> HH:MM
-}
 
 function calcPauseHPA(totalMinutes) {
   if (totalMinutes >= 540) return 45;
   if (totalMinutes >= 360) return 30;
   return 0;
 }
-function calcShiftH(s) {
-  if (!s || !s.start_time || !s.end_time) return 0;
-  const isOff = s.shift_type === 'off' || s.shift_type === 'repos';
-  if (isOff) return 0;
-  const [sh,sm] = extractTime(s.start_time).split(':').map(Number);
-  const [eh,em] = extractTime(s.end_time).split(':').map(Number);
-  let total = (eh*60+em)-(sh*60+sm);
-  if (total < 0) total += 24*60;
-  if (total === 0) return 0;
-  const pause = s.break_minutes ?? calcPauseHPA(total);
-  return Math.max(0, (total - pause) / 60);
-}
-function calcHeuresEmp(shiftsArr) { return shiftsArr.reduce((a,s) => a + calcShiftH(s), 0); }
 
-export default function Planning({ profile }) {
+function calcShiftH(s) {
+  if (!s.start_time || !s.end_time || s.shift_type === 'repos') return 0;
+  const [sh,sm] = s.start_time.slice(0,5).split(':').map(Number);
+  const [eh,em] = s.end_time.slice(0,5).split(':').map(Number);
+  const brk = parseInt(s.break_minutes || 0);
+  let mins = eh*60+em - sh*60-sm - brk;
+  if (mins < 0) mins += 24*60;
+  return Math.max(0, mins / 60);
+}
+
+function calcHeuresEmp(empId, shiftsMap) {
+  return Object.entries(shiftsMap)
+    .filter(([k]) => k.startsWith(empId + '-'))
+    .reduce((acc, [, arr]) => {
+      const list = Array.isArray(arr) ? arr : [arr];
+      return acc + list.reduce((s, sh) => s + calcShiftH(sh), 0);
+    }, 0);
+}
+
+export default function Planning() {
   const { colors: C } = useTheme();
+  const [service, setService] = useState('Accueil');
   const [weekOffset, setWeekOffset] = useState(0);
   const [employees, setEmployees] = useState([]);
-  const [shifts, setShifts] = useState([]);
-  const [modal, setModal] = useState(null);
-  const [selEmp, setSelEmp] = useState('');
-  const [selShift, setSelShift] = useState('matin');
-  const [selDay, setSelDay] = useState(0);
-  const [customStart, setCustomStart] = useState('08:00');
-  const [customEnd, setCustomEnd] = useState('16:00');
-  const [note, setNote] = useState('');
-  const [activeService, setActiveService] = useState('Accueil');
+  const [shiftsMap, setShiftsMap] = useState({});
   const [monthlySummary, setMonthlySummary] = useState({});
-  const [toast, setToast] = useState(null);
+  const [visibility, setVisibility] = useState({});
+  const [dbShifts, setDbShifts] = useState(DEFAULT_SHIFTS); // shifts depuis Supabase
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [dupDays, setDupDays] = useState([]);
+  const [toast, setToast] = useState('');
+  const [hovered, setHovered] = useState(null);
+  const [exportingPDF, setExportingPDF] = useState(false);
+  const [tempForm, setTempForm] = useState({ first_name: '', last_name: '', role: '' });
+  const [dragEmpIdx, setDragEmpIdx] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
-  const [copyTargetOffset, setCopyTargetOffset] = useState(weekOffset+1);
   const [copyEmpId, setCopyEmpId] = useState('');
+  const [copyTargetOffset, setCopyTargetOffset] = useState(1);
+  const toastTimer = useRef(null);
   const planningRef = useRef(null);
-  const [viewMode, setViewMode] = useState('salarie-ligne');
-  const [empOrder, setEmpOrder] = useState({});
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [sectorMembers, setSectorMembers] = useState({});
-  const [checkedEmps, setCheckedEmps] = useState([]);
-  const [dragSrc, setDragSrc] = useState(null);
+  const mon = getMonday(weekOffset);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const currentMonth = fmtDate(mon).slice(0, 7);
+  const currentMonthLabel = monthsFull[mon.getMonth()] + ' ' + mon.getFullYear();
+  const weekStart = fmtDate(mon);
 
-  const monday = getMonday(weekOffset);
-  const weekDates = DAYS.map((_,i) => addDays(monday, i));
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
-
-  const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000); };
-
-  const loadEmployees = useCallback(async () => {
-    try { const r = await axios.get(API+'/employees'); setEmployees(r.data); } catch(e) {}
+  useEffect(() => {
+    loadEmployees();
+    loadDbShifts();
   }, []);
 
-  const loadShifts = useCallback(async () => {
-    try { const r = await axios.get(API+'/schedules?week='+fmtDate(monday)); setShifts(r.data); } catch(e) {}
-  }, [weekOffset]);
+  useEffect(() => {
+    loadShifts();
+    loadVisibility();
+    loadMonthlySummary();
+  }, [weekOffset, service]); // eslint-disable-line
 
-  const loadMonthlySummary = useCallback(async () => {
-    const m = monday.getFullYear()+'-'+String(monday.getMonth()+1).padStart(2,'0');
-    try { const r = await axios.get(API+'/schedules/monthly-summary?month='+m); setMonthlySummary(r.data); } catch(e) {}
-  }, [weekOffset]);
-
-  const loadPrefs = useCallback(async () => {
+  async function loadDbShifts() {
     try {
-      const { data: orderData } = await supabase.from('planning_preferences').select('*');
-      if (orderData && orderData.length > 0) {
-        const orders = {};
-        orderData.forEach(row => { orders[row.service] = row.emp_order; });
-        setEmpOrder(orders);
-      }
-      const { data: membersData } = await supabase.from('planning_sector_members').select('*');
-      if (membersData && membersData.length > 0) {
-        const members = {};
-        membersData.forEach(row => {
-          if (!members[row.service]) members[row.service] = [];
-          members[row.service].push(row.employee_id);
+      const { data } = await supabase.from('app_settings').select('value').eq('key', 'shifts').single();
+      if (data?.value) {
+        // Merge avec les couleurs par défaut
+        const merged = data.value.map(s => {
+          const def = DEFAULT_SHIFTS.find(d => d.id === s.id);
+          return { ...def, ...s };
         });
-        setSectorMembers(members);
+        // Ajouter Repos s'il n'est pas dans les settings
+        if (!merged.find(s => s.id === 'repos')) {
+          merged.push(DEFAULT_SHIFTS.find(s => s.id === 'repos'));
+        }
+        setDbShifts(merged);
       }
-    } catch(e) {}
-  }, []);
+    } catch {}
+  }
 
-  useEffect(() => { loadEmployees(); loadPrefs(); }, []);
-  useEffect(() => { loadShifts(); loadMonthlySummary(); }, [weekOffset]);
+  async function loadEmployees() {
+    const r = await axios.get(API+'/employees').catch(()=>({data:[]}));
+    setEmployees(r.data.sort((a,b) => (a.sort_order||0) - (b.sort_order||0)));
+  }
 
-  const saveOrder = async (service, newOrder) => {
+  async function loadShifts() {
+    const r = await axios.get(API+'/schedules?week='+fmtDate(mon)).catch(()=>({data:[]}));
+    const map = {};
+    r.data.forEach(s => {
+      const dk = s.work_date ? s.work_date.slice(0,10) : '';
+      const key = s.employee_id + '-' + dk;
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
+    });
+    setShiftsMap(map);
+  }
+
+  async function loadMonthlySummary() {
+    const r = await axios.get(API+'/schedules/monthly-summary?month='+currentMonth).catch(()=>({data:{}}));
+    setMonthlySummary(r.data);
+  }
+
+  async function loadVisibility() {
+    const { data } = await supabase.from('planning_visibility').select('*').eq('service', service).eq('week_start', weekStart);
+    const vis = {};
+    (data||[]).forEach(v => { vis[v.employee_id] = v.is_visible; });
+    setVisibility(vis);
+  }
+
+  async function toggleVisibility(empId, current) {
+    const newVal = !current;
+    setVisibility(prev => ({ ...prev, [empId]: newVal }));
+    await supabase.from('planning_visibility').upsert({ employee_id: empId, service, week_start: weekStart, is_visible: newVal });
+  }
+
+  const filtered = employees.filter(e =>
+    (e.service === service || (e.services_secondaires && e.services_secondaires.split(',').map(s=>s.trim()).includes(service)))
+    && (visibility[e.id] !== false)
+  );
+
+  const allInService = employees.filter(e =>
+    e.service === service || (e.services_secondaires && e.services_secondaires.split(',').map(s=>s.trim()).includes(service))
+  );
+
+  function showToast(msg) { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current=setTimeout(()=>setToast(''),2500); }
+
+  async function exportPDF() {
+    if (!planningRef.current) return;
+    setExportingPDF(true); showToast('Generation PDF...');
     try {
-      await supabase.from('planning_preferences').upsert({ service, emp_order: newOrder }, { onConflict: 'service' });
-      setEmpOrder(prev => ({...prev, [service]: newOrder}));
-    } catch(e) {}
-  };
+      const canvas = await html2canvas(planningRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const ratio = pdfWidth / canvas.width * 10;
+      pdf.setFontSize(10); pdf.setTextColor(100);
+      const endMon2 = addDays(mon,6);
+      const wl = mon.getDate()+' '+months[mon.getMonth()]+' -> '+endMon2.getDate()+' '+months[endMon2.getMonth()]+' '+endMon2.getFullYear();
+      pdf.text('Planning '+service+' · '+wl, 14, 7);
+      pdf.text('Le Bout du Monde · '+new Date().toLocaleDateString('fr-FR'), pdfWidth-14, 7, {align:'right'});
+      pdf.addImage(imgData, 'PNG', 14, 12, canvas.width*ratio/10, canvas.height*ratio/10);
+      pdf.save('planning-'+service.toLowerCase()+'-'+fmtDate(mon)+'.pdf');
+      showToast('PDF telecharge !');
+    } catch { showToast('Erreur PDF'); }
+    finally { setExportingPDF(false); }
+  }
 
-  const saveSectorMembers = async (service, empIds) => {
+  function openModal(emp, dayIdx, existingShift=null) {
+    const date = fmtDate(addDays(mon,dayIdx));
+    const sh = existingShift ? dbShifts.find(s=>s.id===existingShift.shift_type)||dbShifts[0] : dbShifts[0];
+    setForm({
+      empId: emp.id, empName: emp.first_name+' '+emp.last_name, date, dayIdx,
+      shiftId: existingShift?.shift_type || sh.id,
+      start: existingShift ? existingShift.start_time.slice(0,5) : sh.start,
+      end: existingShift ? existingShift.end_time.slice(0,5) : sh.end,
+      breakMinutes: existingShift ? parseInt(existingShift.break_minutes||0) : 0,
+      note: existingShift?.note || '',
+      existingId: existingShift?.id || null,
+      isDouble: false, start2: '18:00', end2: '23:00', breakMinutes2: 0, shiftId2: 'soir',
+    });
+    setDupDays([]); setModal('add');
+  }
+
+  function calcAutoBreak(start, end) {
+    if (!start || !end) return 0;
+    const [sh,sm] = start.split(':').map(Number);
+    const [eh,em] = end.split(':').map(Number);
+    let totalMin = eh*60+em - sh*60-sm;
+    if (totalMin < 0) totalMin += 24*60;
+    return calcPauseHPA(totalMin);
+  }
+
+  // Heures nettes affichées dans la modale
+  const formNetH = form.shiftId && form.shiftId !== 'repos' && form.start && form.end ? (() => {
+    const [sh,sm] = form.start.split(':').map(Number);
+    const [eh,em] = form.end.split(':').map(Number);
+    let mins = eh*60+em - sh*60-sm - (form.breakMinutes||0);
+    if (mins < 0) mins += 24*60;
+    return Math.max(0, mins / 60);
+  })() : 0;
+
+  const form2NetH = form.isDouble && form.start2 && form.end2 ? (() => {
+    const [sh,sm] = form.start2.split(':').map(Number);
+    const [eh,em] = form.end2.split(':').map(Number);
+    let mins = eh*60+em - sh*60-sm - (form.breakMinutes2||0);
+    if (mins < 0) mins += 24*60;
+    return Math.max(0, mins / 60);
+  })() : 0;
+
+  // Valeurs par défaut du shift sélectionné
+  const defaultShift = dbShifts.find(s => s.id === form.shiftId);
+  const isModified = defaultShift && form.shiftId !== 'repos' && !form.existingId &&
+    (form.start !== defaultShift.start || form.end !== defaultShift.end);
+
+  async function saveShift() {
     try {
-      await supabase.from('planning_sector_members').delete().eq('service', service);
-      if (empIds.length > 0) {
-        await supabase.from('planning_sector_members').insert(empIds.map(id => ({ service, employee_id: id })));
+      const breakMins = form.breakMinutes || 0;
+      const newShiftsMap = { ...shiftsMap };
+      if (form.existingId) {
+        await axios.patch(API+'/schedules/'+form.existingId, { start_time:form.start, end_time:form.end, shift_type:form.shiftId, break_minutes:breakMins, note:form.note||null });
+        const key = form.empId+'-'+form.date;
+        if (newShiftsMap[key]) {
+          newShiftsMap[key] = newShiftsMap[key].map(s => s.id === form.existingId ? {...s, start_time:form.start, end_time:form.end, shift_type:form.shiftId, break_minutes:breakMins, note:form.note||null} : s);
+        }
+      } else {
+        const r = await axios.post(API+'/schedules', { employee_id:form.empId, work_date:form.date, start_time:form.start, end_time:form.end, shift_type:form.shiftId, break_minutes:breakMins, note:form.note||null });
+        const key = form.empId+'-'+form.date;
+        newShiftsMap[key] = [...(newShiftsMap[key]||[]), r.data];
+        if (form.isDouble && form.shiftId2 !== 'repos') {
+          const r2 = await axios.post(API+'/schedules', { employee_id:form.empId, work_date:form.date, start_time:form.start2, end_time:form.end2, shift_type:form.shiftId2, break_minutes:form.breakMinutes2||0, note:form.note||null });
+          newShiftsMap[key] = [...newShiftsMap[key], r2.data];
+        }
       }
-      setSectorMembers(prev => ({...prev, [service]: empIds}));
-    } catch(e) {}
-  };
-
-  const getSortedEmployees = () => {
-    const members = sectorMembers[activeService] || [];
-    const baseEmps = employees.filter(e => e.is_active !== false && (
-      e.service === activeService ||
-      (e.services_secondaires && e.services_secondaires.includes(activeService)) ||
-      members.includes(e.id)
-    ));
-    const order = empOrder[activeService];
-    if (!order || order.length === 0) return baseEmps;
-    const ordered = [];
-    order.forEach(id => { const e = baseEmps.find(x => x.id === id); if (e) ordered.push(e); });
-    baseEmps.forEach(e => { if (!order.includes(e.id)) ordered.push(e); });
-    return ordered;
-  };
-  const sortedEmps = getSortedEmployees();
-
-  // CRUD shifts - start_time/end_time envoyes au format "HH:MM:SS" (type time PostgreSQL)
-  const createShift = async () => {
-    if (!selEmp) return;
-    const shift = SHIFTS.find(s => s.id === selShift);
-    const dateStr = fmtDate(weekDates[selDay]);
-    const isOff = selShift === 'off' || selShift === 'repos';
-    const startTime = isOff ? '00:00:00' : (selShift==='custom' ? customStart+':00' : shift.start+':00');
-    const endTime   = isOff ? '00:00:00' : (selShift==='custom' ? customEnd+':00'   : shift.end+':00');
-    try {
-      await axios.post(API+'/schedules', {
-        employee_id: selEmp,
-        work_date: dateStr,
-        start_time: startTime,
-        end_time: endTime,
-        shift_type: selShift,
-        break_minutes: isOff ? 0 : undefined,
-        note
-      });
-      await loadShifts(); await loadMonthlySummary();
-      setModal(null); setNote(''); showToast('Creneau cree');
-    } catch(e) { showToast('Erreur creation','error'); }
-  };
-
-  const handleDeleteShift = async (id) => {
-    if (!window.confirm('Supprimer ce creneau ?')) return;
-    try {
-      await axios.delete(API+'/schedules/'+id);
-      await loadShifts(); await loadMonthlySummary(); showToast('Creneau supprime');
-    } catch(e) { showToast('Erreur suppression','error'); }
-  };
-
-  // Dupliquer semaine
-  const copyWeek = async () => {
-    const tgtMonday = getMonday(copyTargetOffset);
-    const srcMonday = fmtDate(getMonday(weekOffset));
-    const srcShifts = copyEmpId ? shifts.filter(s => String(s.employee_id) === String(copyEmpId)) : shifts;
-    let ok = 0;
-    for (const s of srcShifts) {
-      const srcDate = new Date(s.work_date);
-      const srcMon = new Date(srcMonday);
-      const dayDiff = Math.round((srcDate - srcMon) / (1000*60*60*24));
-      const tgtDate = fmtDate(addDays(tgtMonday, dayDiff));
-      const isOff = s.shift_type === 'off' || s.shift_type === 'repos';
-      try {
-        await axios.post(API+'/schedules', {
-          employee_id: s.employee_id,
-          work_date: tgtDate,
-          start_time: isOff ? '00:00:00' : extractTime(s.start_time)+':00',
-          end_time:   isOff ? '00:00:00' : extractTime(s.end_time)+':00',
-          shift_type: s.shift_type,
-          break_minutes: s.break_minutes,
-          note: s.note
-        });
-        ok++;
-      } catch(e) {}
-    }
-    setCopyModal(false);
-    await loadShifts();
-    showToast(ok+' creneaux copies vers semaine '+copyTargetOffset);
-  };
-
-  // Drag & Drop HTML5 natif - briques
-  const handleDragStart = (e, shift) => {
-    setDragSrc(shift);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(shift.id));
-  };
-  const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
-  const handleDrop = async (e, empId, dayIdx) => {
-    e.preventDefault();
-    if (!dragSrc) return;
-    if (String(dragSrc.employee_id) === String(empId) && dragSrc.dayIdx === dayIdx) return;
-    const newDate = fmtDate(weekDates[dayIdx]);
-    const isOff = dragSrc.shift_type === 'off' || dragSrc.shift_type === 'repos';
-    try {
-      await axios.patch(API+'/schedules/'+dragSrc.id, {
-        employee_id: empId,
-        work_date: newDate,
-        start_time: isOff ? '00:00:00' : extractTime(dragSrc.start_time)+':00',
-        end_time:   isOff ? '00:00:00' : extractTime(dragSrc.end_time)+':00',
-      });
-      await loadShifts();
-      showToast('Creneau deplace');
-    } catch(err) { showToast('Erreur deplacement','error'); }
-    setDragSrc(null);
-  };
-  const handleDragEnd = () => setDragSrc(null);
-
-  // Reordering employes
-  const handleEmpDragStart = (e, empId) => {
-    e.dataTransfer.setData('empId', String(empId));
-    e.dataTransfer.effectAllowed = 'move';
-  };
-  const handleEmpDrop = (e, targetEmpId) => {
-    e.preventDefault();
-    const srcId = e.dataTransfer.getData('empId');
-    if (srcId === String(targetEmpId)) return;
-    const current = sortedEmps.map(x => x.id);
-    const srcIdx = current.findIndex(id => String(id) === String(srcId));
-    const tgtIdx = current.findIndex(id => String(id) === String(targetEmpId));
-    if (srcIdx === -1 || tgtIdx === -1) return;
-    const newOrder = [...current];
-    newOrder.splice(srcIdx, 1);
-    newOrder.splice(tgtIdx, 0, current[srcIdx]);
-    saveOrder(activeService, newOrder);
-    showToast('Ordre mis a jour');
-  };
-
-  // Heures semaine par salarie
-  const getEmpWeekHours = (empId) => {
-    const empShifts = shifts.filter(s => String(s.employee_id) === String(empId));
-    return calcHeuresEmp(empShifts);
-  };
-
-  // Heures mois depuis monthlySummary
-  const getEmpMonthHours = (empId) => {
-    const k = String(empId);
-    const entry = monthlySummary[k];
-    if (!entry) return null;
-    if (typeof entry === 'number') return entry;
-    if (entry.heures_planifiees !== undefined) return entry.heures_planifiees;
-    return null;
-  };
-
-  // Export PDF ameliore v2 - bordures, jours avec numero, horaires en gros, lignes alternees, titre enrichi
-  const exportPDF = async () => {
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const mon = monday;
-    const weekLabel = fmtDate(mon) + ' au ' + fmtDate(addDays(mon,6));
-
-    // === TITRE PRINCIPAL EN GROS ===
-    doc.setFont('helvetica','bold'); doc.setFontSize(20);
-    doc.setTextColor(108, 92, 231);
-    doc.text('PLANNING ' + activeService.toUpperCase(), 14, 14);
-    doc.setFontSize(13); doc.setFont('helvetica','bold');
-    doc.setTextColor(60, 60, 60);
-    doc.text('Semaine du ' + weekLabel, 14, 23);
-    doc.setTextColor(30,30,30);
-
-    // Ligne decorative sous le titre
-    doc.setDrawColor(108, 92, 231); doc.setLineWidth(0.8);
-    doc.line(14, 27, 283, 27);
-
-    // === CONSTANTES MISE EN PAGE ===
-    // A4 paysage = 297mm. Marge gauche 14, droite 10 => utilisable 273mm
-    const startX = 14;
-    const pageW = 273; // largeur utilisable
-    const rowH = 16;   // hauteur ligne
-    let y = 33;        // position Y de depart
-
-    const FULL_DAYS = ['LUNDI','MARDI','MERCREDI','JEUDI','VENDREDI','SAMEDI','DIMANCHE'];
-
-    if (viewMode === 'salarie-ligne') {
-      // Mode : colonnes = jours, lignes = salaries
-      const nameColW = 40;
-      const colW = Math.floor((pageW - nameColW) / 7); // ~33mm par jour
-
-      // --- EN-TETE : fond violet, jours avec nom complet + numero ---
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(60, 40, 180);
-      doc.setLineWidth(0.4);
-      doc.setTextColor(0,0,0);
-      doc.setFont('helvetica','bold');
-
-      // Cellule "Salarie"
-      doc.rect(startX, y, nameColW, rowH, 'FD');
-      doc.setFontSize(9);
-      doc.text('Salarie', startX+2, y+10);
-
-      // Cellules jours
-      weekDates.forEach((d, i) => {
-        const x = startX + nameColW + i * colW; doc.setFillColor(255,255,255); doc.setDrawColor(60,40,180); doc.setLineWidth(0.4); doc.setTextColor(0,0,0); doc.setFont('helvetica','bold');
-        doc.rect(x, y, colW, rowH, 'FD');
-        doc.setFontSize(8);
-        doc.text(FULL_DAYS[i], x+2, y+7);
-        doc.text(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), x+2, y+13);
-      });
-      y += rowH;
-      doc.setFont('helvetica','normal');
-
-      // --- LIGNES SALARIES ---
-      sortedEmps.forEach((emp, ei) => {
-        const bgLight = [242,242,252];
-        const bgWhite = [255,255,255];
-        const bg = ei%2===0 ? bgLight : bgWhite;
-
-        doc.setFillColor(...bg);
-        doc.setDrawColor(180,180,195);
-        doc.setLineWidth(0.3);
-        doc.setTextColor(30,30,30);
-
-        // Cellule nom
-        doc.rect(startX, y, nameColW, rowH, 'FD');
-        doc.setFont('helvetica','bold'); doc.setFontSize(8);
-        doc.text((emp.first_name+' '+emp.last_name).substring(0,16), startX+2, y+10);
-        doc.setFont('helvetica','normal');
-
-        // Cellules par jour
-        weekDates.forEach((d, dayIdx) => {
-          const x = startX + nameColW + dayIdx * colW;
-          const dayShifts = shifts.filter(s =>
-            String(s.employee_id)===String(emp.id) && s.work_date && s.work_date.slice(0,10)===fmtDate(d)
-          );
-          doc.setFillColor(...bg);
-          doc.rect(x, y, colW, rowH, 'FD');
-
-          if (dayShifts.length > 0) {
-            const s = dayShifts[0];
-            const sh = SHIFTS.find(x=>x.id===s.shift_type);
-            if (s.shift_type==='off' || s.shift_type==='repos') {
-              doc.setTextColor(160,160,160); doc.setFontSize(7);
-              doc.text(sh?sh.label:'OFF', x+2, y+10);
-            } else {
-              doc.setTextColor(40,40,40);
-              doc.setFont('helvetica','bold'); doc.setFontSize(9);
-              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+10);
-              doc.setFont('helvetica','normal');
-            }
-            doc.setTextColor(30,30,30);
+      for (const di of dupDays) {
+        if (di === form.dayIdx) continue;
+        const dd = fmtDate(addDays(mon,di));
+        const key2 = form.empId+'-'+dd;
+        try {
+          const r = await axios.post(API+'/schedules', { employee_id:form.empId, work_date:dd, start_time:form.start, end_time:form.end, shift_type:form.shiftId, break_minutes:breakMins, note:form.note||null });
+          newShiftsMap[key2] = [...(newShiftsMap[key2]||[]), r.data];
+          if (form.isDouble && form.shiftId2 !== 'repos') {
+            const r2 = await axios.post(API+'/schedules', { employee_id:form.empId, work_date:dd, start_time:form.start2, end_time:form.end2, shift_type:form.shiftId2, break_minutes:form.breakMinutes2||0, note:form.note||null });
+            newShiftsMap[key2] = [...newShiftsMap[key2], r2.data];
           }
-        });
-        y += rowH;
-        if (y > 185) { doc.addPage(); y = 20; }
+        } catch {}
+      }
+      setShiftsMap(newShiftsMap); setModal(null);
+      loadMonthlySummary();
+      showToast('Enregistre'+(dupDays.filter(d=>d!==form.dayIdx).length>0?' + '+dupDays.filter(d=>d!==form.dayIdx).length+' copie(s)':''));
+    } catch(err) { showToast('Erreur : '+(err.response?.data?.error||err.message)); }
+  }
+
+  async function deleteShift(e, shiftId, empId, date) {
+    e.stopPropagation();
+    try {
+      await axios.delete(API+'/schedules/'+shiftId);
+      const key = empId+'-'+date;
+      setShiftsMap(prev => {
+        const n = {...prev};
+        n[key] = (n[key]||[]).filter(s => s.id !== shiftId);
+        if (!n[key].length) delete n[key];
+        return n;
       });
+      loadMonthlySummary();
+      showToast('Supprime');
+    } catch { showToast('Erreur'); }
+  }
 
-    } else {
-      // Mode : lignes = jours, colonnes = salaries
-      const dayLabelW = 30;
-      const nbEmps = Math.max(sortedEmps.length, 1);
-      const empColW = Math.min(36, Math.floor((pageW - dayLabelW) / nbEmps));
+  async function publishWeek() {
+    try { const r = await axios.post(API+'/schedules/publish',{week:fmtDate(mon)}); showToast(r.data.published+' creneau(x) publie(s)'); }
+    catch { showToast('Erreur'); }
+  }
 
-      // --- EN-TETE : noms des employes ---
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(60, 40, 180);
-      doc.setLineWidth(0.4);
-      doc.setTextColor(0,0,0);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9);
-
-      doc.rect(startX, y, dayLabelW, rowH, 'FD');
-      doc.text('Jour', startX+2, y+10);
-
-      sortedEmps.forEach((emp, i) => {
-        const x = startX + dayLabelW + i * empColW; doc.setFillColor(255,255,255); doc.setDrawColor(60,40,180); doc.setLineWidth(0.4); doc.setTextColor(0,0,0); doc.setFont('helvetica','bold');
-        doc.rect(x, y, empColW, rowH, 'FD');
-        doc.setFontSize(7);
-        doc.text((emp.first_name+' '+emp.last_name).substring(0,12), x+2, y+10);
-        doc.setFontSize(9);
-      });
-      y += rowH;
-      doc.setFont('helvetica','normal');
-
-      // --- LIGNES PAR JOUR ---
-      weekDates.forEach((d, dayIdx) => {
-        const bgLight = [242,242,252];
-        const bgWhite = [255,255,255];
-        const bg = dayIdx%2===0 ? bgLight : bgWhite;
-
-        doc.setFillColor(...bg);
-        doc.setDrawColor(180,180,195);
-        doc.setLineWidth(0.3);
-        doc.setTextColor(30,30,30);
-
-        // Cellule jour : nom complet + numero
-        doc.rect(startX, y, dayLabelW, rowH, 'FD');
-        doc.setFont('helvetica','bold'); doc.setFontSize(8);
-        doc.text(FULL_DAYS[dayIdx], startX+2, y+7);
-        doc.text(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'), startX+2, y+13);
-        doc.setFont('helvetica','normal');
-
-        // Cellules par employe
-        sortedEmps.forEach((emp, i) => {
-          const x = startX + dayLabelW + i * empColW;
-          const dayShifts = shifts.filter(s =>
-            String(s.employee_id)===String(emp.id) && s.work_date && s.work_date.slice(0,10)===fmtDate(d)
-          );
-          doc.setFillColor(...bg);
-          doc.rect(x, y, empColW, rowH, 'FD');
-
-          if (dayShifts.length > 0) {
-            const s = dayShifts[0];
-            const sh = SHIFTS.find(x=>x.id===s.shift_type);
-            if (s.shift_type==='off' || s.shift_type==='repos') {
-              doc.setTextColor(160,160,160); doc.setFontSize(7);
-              doc.text(sh?sh.label:'OFF', x+2, y+10);
-            } else {
-              doc.setTextColor(40,40,40);
-              doc.setFont('helvetica','bold'); doc.setFontSize(9);
-              doc.text(extractTime(s.start_time)+'-'+extractTime(s.end_time), x+2, y+10);
-              doc.setFont('helvetica','normal');
-            }
-            doc.setTextColor(30,30,30);
-          }
-        });
-        y += rowH;
-      });
+  async function copyWeek() {
+    if(!copyEmpId){showToast('Selectionne un salarie');return;}
+    const tm=getMonday(copyTargetOffset);
+    const es=Object.entries(shiftsMap).filter(([k])=>k.startsWith(copyEmpId+'-'));
+    if(!es.length){showToast('Aucun creneau');return;}
+    let cp=0;
+    for(const[k,shArr]of es){
+      const sd=new Date(k.split('-').slice(1).join('-'));
+      const di=(sd.getDay()+6)%7;
+      const dd=fmtDate(addDays(tm,di));
+      for (const sh of (Array.isArray(shArr)?shArr:[shArr])) {
+        try{await axios.post(API+'/schedules',{employee_id:copyEmpId,work_date:dd,start_time:sh.start_time,end_time:sh.end_time,shift_type:sh.shift_type,break_minutes:sh.break_minutes||0,note:sh.note||null});cp++;}catch{}
+      }
     }
+    setCopyModal(false); showToast(cp+' creneau(x) copies');
+  }
 
-    doc.save('planning-'+activeService+'-'+fmtDate(monday)+'.pdf');
-  };
+  async function moveEmp(fromIdx, toIdx) {
+    const newList = [...allInService];
+    const [moved] = newList.splice(fromIdx, 1);
+    newList.splice(toIdx, 0, moved);
+    for (let i = 0; i < newList.length; i++) {
+      await axios.patch(API+'/employees/'+newList[i].id, { sort_order: i+1 });
+    }
+    setEmployees(prev => {
+      const others = prev.filter(e => !allInService.find(a => a.id === e.id));
+      return [...others, ...newList].sort((a,b) => (a.sort_order||0)-(b.sort_order||0));
+    });
+  }
 
+  async function addTempEmployee() {
+    if (!tempForm.first_name) { showToast('Prenom requis'); return; }
+    const { data } = await supabase.from('employees').insert({
+      first_name: tempForm.first_name, last_name: tempForm.last_name||'',
+      role: tempForm.role||'Equiper temp', email: 'temp_'+Date.now()+'@temp.fr',
+      service, contract_hours: 35, contract_type: 'CDD', is_active: true, is_temp: true,
+      sort_order: allInService.length + 1,
+    }).select().single();
+    if (data) { setEmployees(prev => [...prev, data]); setVisibility(prev => ({...prev, [data.id]: true})); }
+    setModal(null); setTempForm({ first_name:'', last_name:'', role:'' });
+    showToast('Equiper temp ajoute');
+  }
 
-  const inp = { padding:'6px 10px', borderRadius:'6px', border:'1px solid '+C.border, background:C.input, color:C.text, fontSize:'13px', width:'100%' };
-  const lbl = { fontSize:'11px', fontWeight:600, color:C.muted, letterSpacing:'0.05em', display:'block', marginBottom:'4px' };
-  const btn = (bg,fg) => ({ padding:'8px 14px', borderRadius:'8px', border:'none', background:bg, color:fg, cursor:'pointer', fontSize:'13px', fontWeight:500 });
+  async function deleteTempEmp(empId) {
+    await supabase.from('employees').delete().eq('id', empId).eq('is_temp', true);
+    setEmployees(prev => prev.filter(e => e.id !== empId));
+    showToast('Supprime');
+  }
 
-  // Rendu brique shift
-  const renderShift = (s, empId, dayIdx) => {
-    const def = SHIFTS.find(x=>x.id===s.shift_type) || SHIFTS[0];
-    const isOff = s.shift_type==='off'||s.shift_type==='repos';
-    return (
-      <div key={s.id}
-        draggable={isAdmin}
-        onDragStart={isAdmin ? (e)=>handleDragStart(e,{...s,dayIdx}) : undefined}
-        onDragEnd={handleDragEnd}
-        style={{ background:def.bg, border:'1.5px solid '+def.border, borderRadius:'7px', padding:'4px 7px', marginBottom:'3px', fontSize:'11px', cursor:isAdmin?'grab':'default', opacity:dragSrc&&dragSrc.id===s.id?0.5:1, transition:'opacity 0.15s' }}
-      >
-        <div style={{fontWeight:600, color:def.text}}>
-          {isOff ? def.label : (extractTime(s.start_time)+' - '+extractTime(s.end_time))}
-        </div>
-        {!isOff && <div style={{color:def.text,opacity:0.8}}>{def.label}{s.note?(' - '+s.note):''}</div>}
-        {isOff && s.note && <div style={{color:def.text,opacity:0.7,fontSize:'10px'}}>{s.note}</div>}
-        {isAdmin && (
-          <button onClick={()=>handleDeleteShift(s.id)} style={{background:'none',border:'none',color:def.text,cursor:'pointer',fontSize:'10px',padding:'1px 4px',opacity:0.7}}>x</button>
-        )}
-      </div>
-    );
-  };
+  function toggleDupDay(di){setDupDays(prev=>prev.includes(di)?prev.filter(d=>d!==di):[...prev,di]);}
 
-  // Cellule droppable
-  const renderCell = (emp, dayIdx) => {
-    const d = weekDates[dayIdx];
-    const dayShifts = shifts.filter(s => String(s.employee_id)===String(emp.id) && s.work_date.slice(0,10)===fmtDate(d));
-    const isDropTarget = dragSrc && !(String(dragSrc.employee_id)===String(emp.id) && dragSrc.dayIdx===dayIdx);
-    return (
-      <td key={dayIdx}
-        onDragOver={isAdmin ? handleDragOver : undefined}
-        onDrop={isAdmin ? (e)=>handleDrop(e,emp.id,dayIdx) : undefined}
-        style={{ border:'1px solid '+C.border, padding:'4px', minWidth:'110px', verticalAlign:'top', background:isDropTarget&&dragSrc?C.cardHover||'rgba(108,92,231,0.05)':C.card, transition:'background 0.15s' }}
-        onClick={() => { if (isAdmin && dayShifts.length===0) { setSelDay(dayIdx); setSelEmp(emp.id); setModal('create'); } }}
-      >
-        {dayShifts.map(s => renderShift(s, emp.id, dayIdx))}
-        {isAdmin && dayShifts.length===0 && (
-          <div style={{color:C.muted,fontSize:'11px',textAlign:'center',paddingTop:'8px',cursor:'pointer'}}>+</div>
-        )}
-      </td>
-    );
-  };
-
-  const weekLabel = monthsFull[monday.getMonth()]+' '+monday.getFullYear();
+  const endMon=addDays(mon,6);
+  const weekLabel=mon.getDate()+' '+months[mon.getMonth()]+' -> '+endMon.getDate()+' '+months[endMon.getMonth()]+' '+endMon.getFullYear();
+  const inp={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 8px',color:C.text,fontSize:'12px',fontFamily:'inherit'};
+  const lbl={display:'block',fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'};
 
   return (
-    <div style={{padding:'16px', color:C.text}}>
-      {/* Header */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-          <button onClick={()=>setWeekOffset(w=>w-1)} style={btn(C.card,C.text)}>‹</button>
-          <span style={{fontWeight:700,fontSize:'15px',minWidth:'160px',textAlign:'center'}}>
-            Semaine du {fmtDate(monday).slice(8,10)}/{fmtDate(monday).slice(5,7)} au {fmtDate(addDays(monday,6)).slice(8,10)}/{fmtDate(addDays(monday,6)).slice(5,7)} - {weekLabel}
-          </span>
-          <button onClick={()=>setWeekOffset(w=>w+1)} style={btn(C.card,C.text)}>›</button>
-          <button onClick={()=>setWeekOffset(0)} style={{...btn(C.card,C.muted),fontSize:'11px'}}>Auj.</button>
+    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace"}}>
+      {/* Barre nav */}
+      <div style={{borderBottom:'1px solid '+C.border,padding:'14px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',background:C.card,flexWrap:'wrap',gap:'10px'}}>
+        <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
+          {SERVICES.map(sv=>(
+            <button key={sv} style={{padding:'5px 14px',borderRadius:'6px',border:'1px solid '+(service===sv?C.purple:C.border),background:service===sv?C.purpleLight:'none',color:service===sv?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} onClick={()=>setService(sv)}>{sv}</button>
+          ))}
         </div>
-        <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-          <button onClick={()=>setViewMode(v=>v==='salarie-ligne'?'salarie-colonne':'salarie-ligne')} style={btn(C.card,C.text)}>
-            {viewMode==='salarie-ligne' ? '⇄ Inverser vue' : '⇅ Vue normale'}
-          </button>
-          {isAdmin && (
-            <>
-              <button onClick={()=>setCopyModal(true)} style={btn(C.card,C.text)}>📋 Copier semaine</button>
-              <button onClick={()=>setShowAddMember(true)} style={btn(C.card,C.text)}>+ Ajouter membre</button>
-              <button onClick={()=>{ setSelEmp(''); setSelShift('matin'); setSelDay(0); setNote(''); setModal('create'); }} style={btn(C.purple||'#6C5CE7','#fff')}>+ Creneau</button>
-            </>
-          )}
-          <button onClick={exportPDF} style={btn(C.card,C.text)}>📄 PDF</button>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <button onClick={()=>setWeekOffset(w=>w-1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontSize:'13px',fontFamily:'inherit'}}>{'<'}</button>
+          <span style={{fontSize:'12px',minWidth:'180px',textAlign:'center',color:C.text}}>{weekLabel}</span>
+          <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontSize:'13px',fontFamily:'inherit'}}>{'>'}</button>
+          <button onClick={()=>setWeekOffset(0)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.muted,cursor:'pointer',padding:'4px 10px',fontSize:'11px',fontFamily:'inherit'}}>Auj.</button>
+          <button onClick={()=>setModal('manage')} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 12px',color:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} title="Gerer les equipiers">⚙️</button>
+          <button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
+          <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>{exportingPDF?'...':'↓ PDF'}</button>
+          <button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>
         </div>
       </div>
 
-      {/* Onglets services */}
-      <div style={{display:'flex',gap:'6px',marginBottom:'14px',flexWrap:'wrap'}}>
-        {SERVICES.map(s => (
-          <div key={s} style={{display:'flex',alignItems:'center',gap:'2px'}}>
-            <button onClick={()=>setActiveService(s)}
-              style={{padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:600, background:activeService===s?(C.purple||'#6C5CE7'):C.card, color:activeService===s?'#fff':C.text}}
-            >{s}</button>
-            {isAdmin && <button onClick={(e)=>{e.stopPropagation();setActiveService(s);setCheckedEmps([]);setShowAddMember(true);}}
-              style={{padding:'2px 7px',borderRadius:'10px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:700,background:activeService===s?(C.purple||'#6C5CE7'):C.border,color:activeService===s?'#fff':C.muted,lineHeight:'1.4'}}
-              title={'Ajouter un salarié dans '+s}
-            >+</button>}
+      {/* Légende */}
+      <div style={{padding:'8px 24px',background:C.card,borderBottom:'1px solid '+C.border,display:'flex',gap:'16px',alignItems:'center',flexWrap:'wrap'}}>
+        <span style={{fontSize:'10px',color:C.muted,letterSpacing:'0.08em'}}>CC HPA :</span>
+        {[{color:C.green,label:'≤ contrat'},{color:C.purple,label:'> contrat'},{color:C.amber,label:'> 44h ⚠️'},{color:C.red,label:'> 48h 🚨'}].map(item=>(
+          <div key={item.label} style={{display:'flex',alignItems:'center',gap:'5px',fontSize:'11px',color:C.muted}}>
+            <div style={{width:'10px',height:'10px',borderRadius:'50%',background:item.color,flexShrink:0}}/>{item.label}
           </div>
         ))}
+        <span style={{fontSize:'10px',color:C.muted,marginLeft:'auto'}}>Pause auto CC HPA · Max 48h/sem</span>
       </div>
 
       {/* Grille planning */}
-      <div ref={planningRef} style={{overflowX:'auto'}}>
-        {viewMode === 'salarie-ligne' ? (
-          <table style={{borderCollapse:'collapse',width:'100%',minWidth:'700px'}}>
-            <thead>
-              <tr>
-                <th style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'180px',textAlign:'left'}}>
-                  <span style={{fontSize:'11px',color:C.muted}}>Salarie</span>
-                </th>
-                {weekDates.map((d,i) => (
-                  <th key={i} style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'110px',textAlign:'center'}}>
-                    <div style={{fontWeight:700}}>{DAYS[i]}</div>
-                    <div style={{fontSize:'11px',color:C.muted}}>{d.getDate()}/{String(d.getMonth()+1).padStart(2,'0')}</div>
-                  </th>
-                ))}
-                <th style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'90px',textAlign:'center'}}>
-                  <div style={{fontSize:'11px',color:C.muted}}>Sem.</div>
-                  <div style={{fontSize:'10px',color:C.muted}}>/ Mois</div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedEmps.map((emp,ei) => {
-                const weekH = getEmpWeekHours(emp.id);
-                const monthH = getEmpMonthHours(emp.id);
-                return (
-                  <tr key={emp.id}
-                    draggable={isAdmin}
-                    onDragStart={isAdmin ? (e)=>handleEmpDragStart(e,emp.id) : undefined}
-                    onDragOver={isAdmin ? (e)=>e.preventDefault() : undefined}
-                    onDrop={isAdmin ? (e)=>handleEmpDrop(e,emp.id) : undefined}
-                    style={{background:ei%2===0?C.card:C.cardAlt||C.card}}
-                  >
-                    <td style={{border:'1px solid '+C.border,padding:'8px'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                        {isAdmin && <span style={{cursor:'grab',color:C.muted,fontSize:'14px'}}>☰</span>}
-                        <div style={{width:'28px',height:'28px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'11px',flexShrink:0}}>
-                          {initials(emp.first_name,emp.last_name)}
+      <div style={{padding:'20px 24px'}}>
+        {filtered.length===0?(
+          <div style={{color:C.muted,textAlign:'center',padding:'60px',fontSize:'13px'}}>
+            Aucun salarie visible · <button onClick={()=>setModal('manage')} style={{background:'none',border:'none',color:C.purple,cursor:'pointer',fontFamily:'inherit',fontSize:'13px',textDecoration:'underline'}}>Gérer les équipiers</button>
+          </div>
+        ):(
+          <div ref={planningRef} style={{border:'1px solid '+C.border,borderRadius:'10px',overflow:'hidden',boxShadow:'0 2px 8px '+C.shadow,background:'#fff'}}>
+            <div style={{padding:'10px 16px',background:'#f8f9ff',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{fontSize:'13px',fontWeight:600,color:'#1A1D27'}}>Planning {service} · {weekLabel}</div>
+              <div style={{fontSize:'11px',color:'#6B7280'}}>{currentMonthLabel} · Le Bout du Monde</div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',background:'#f8f9ff',borderBottom:'1px solid '+C.border}}>
+              <div style={{padding:'8px',borderRight:'1px solid '+C.border,fontSize:'10px',color:'#6B7280'}}>{currentMonthLabel}</div>
+              {DAYS.map((d,i)=>{const day=addDays(mon,i);const isToday=day.getTime()===today.getTime();return(
+                <div key={i} style={{padding:'8px 4px',textAlign:'center',fontSize:'10px',color:isToday?'#6C5FCD':'#6B7280',borderRight:i<6?'1px solid '+C.border:'none',background:isToday?'#EEF2FF':'transparent'}}>
+                  {d}<span style={{fontSize:'16px',fontWeight:600,display:'block',color:isToday?'#6C5FCD':'#1A1D27'}}>{day.getDate()}</span>
+                </div>
+              );})}
+            </div>
+            {filtered.map((emp,ei)=>{
+              const totalH = calcHeuresEmp(emp.id, shiftsMap);
+              const contractH = parseFloat(emp.contract_hours)||35;
+              const hColor = totalH>48?'#DC2626':totalH>44?'#D97706':totalH>contractH?'#6C5FCD':'#16A34A';
+              const isMulti = emp.service !== service;
+              const monthly = monthlySummary[emp.id]||{heures_planifiees:0,heures_realisees:0};
+              return(
+                <div key={emp.id}
+                  draggable onDragStart={()=>setDragEmpIdx(ei)} onDragOver={e=>e.preventDefault()}
+                  onDrop={()=>{ if(dragEmpIdx!==null&&dragEmpIdx!==ei){moveEmp(dragEmpIdx,ei);setDragEmpIdx(null);} }}
+                  style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none',opacity:dragEmpIdx===ei?0.5:1}}>
+                  <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:'#fff',cursor:'grab'}}>
+                    <div style={{position:'relative',flexShrink:0,marginTop:'2px'}}>
+                      <div style={{width:'30px',height:'30px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length]+'22',border:'1px solid '+AVATAR_COLORS[ei%AVATAR_COLORS.length]+'44',color:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>
+                        {initials(emp.first_name,emp.last_name)}
+                      </div>
+                      {isMulti&&<div style={{position:'absolute',bottom:'-2px',right:'-2px',width:'10px',height:'10px',borderRadius:'50%',background:'#D97706',border:'1px solid #fff',fontSize:'6px',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>M</div>}
+                      {emp.is_temp&&<div style={{position:'absolute',top:'-2px',right:'-2px',width:'10px',height:'10px',borderRadius:'50%',background:'#6C5FCD',border:'1px solid #fff',fontSize:'6px',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>T</div>}
+                    </div>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:'11px',fontWeight:500,lineHeight:1.2,color:'#1A1D27',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
+                      <div style={{fontSize:'9px',color:'#6B7280'}}>{emp.role}</div>
+                      {totalH>0?(
+                        <div style={{fontSize:'9px',fontWeight:700,color:hColor,marginTop:'3px',display:'flex',alignItems:'center',gap:'3px'}}>
+                          <div style={{width:'5px',height:'5px',borderRadius:'50%',background:hColor,flexShrink:0}}/>
+                          Sem: {totalH.toFixed(1)}h / {contractH}h
                         </div>
-                        <div>
-                          <div style={{fontWeight:600,fontSize:'12px'}}>{emp.first_name} {emp.last_name}</div>
-                          <div style={{fontSize:'10px',color:C.muted}}>{emp.role}</div>
+                      ):<div style={{fontSize:'9px',color:'#E5E7EB',marginTop:'3px'}}>Sem: 0h / {contractH}h</div>}
+                      <div style={{marginTop:'4px',padding:'3px 5px',background:'#F4F6FA',borderRadius:'4px',border:'1px solid #E2E5ED'}}>
+                        <div style={{fontSize:'8px',color:'#6B7280',marginBottom:'2px'}}>CE MOIS</div>
+                        <div style={{display:'flex',gap:'6px'}}>
+                          <div style={{fontSize:'9px',color:'#6C5FCD',fontWeight:600}}>📅 {(monthly.heures_planifiees||0).toFixed(1)}h plan.</div>
+                          <div style={{fontSize:'9px',color:'#16A34A',fontWeight:600}}>✓ {(monthly.heures_realisees||0).toFixed(1)}h réal.</div>
                         </div>
                       </div>
-                    </td>
-                    {weekDates.map((_,dayIdx) => renderCell(emp, dayIdx))}
-                    <td style={{border:'1px solid '+C.border,padding:'6px 8px',textAlign:'center',verticalAlign:'middle'}}>
-                      <div style={{fontWeight:700,fontSize:'13px',color:weekH>0?(C.purple||'#6C5CE7'):C.muted}}>
-                        {weekH>0 ? weekH.toFixed(1)+'h' : '-'}
+                    </div>
+                  </div>
+                  {DAYS.map((_,di)=>{
+                    const date=fmtDate(addDays(mon,di));
+                    const key=emp.id+'-'+date;
+                    const dayShifts=shiftsMap[key]||[];
+                    return(
+                      <div key={di} style={{padding:'3px',minHeight:'80px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:hovered===key?C.borderLight:'transparent'}}
+                        onClick={()=>openModal(emp,di)} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(null)}>
+                        {dayShifts.length>0?(
+                          <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
+                            {dayShifts.map((shift,si)=>{
+                              const shDef=dbShifts.find(s=>s.id===shift.shift_type)||DEFAULT_SHIFTS[4];
+                              return(
+                                <div key={si} onClick={e=>{e.stopPropagation();openModal(emp,di,shift);}}
+                                  style={{borderRadius:'5px',padding:'3px 6px',fontSize:'10px',fontWeight:500,background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,cursor:'pointer',position:'relative',lineHeight:1.3}}>
+                                  {shDef.label}
+                                  {shift.shift_type!=='repos'&&<div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?.slice(0,5)}–{shift.end_time?.slice(0,5)}{parseInt(shift.break_minutes||0)>0?' ('+shift.break_minutes+'m)':''}</div>}
+                                  {shift.note&&<div style={{fontSize:'9px',opacity:0.9,marginTop:'1px',fontStyle:'italic',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{shift.note}</div>}
+                                  <button onClick={e=>deleteShift(e,shift.id,emp.id,date)} style={{position:'absolute',top:'2px',right:'3px',background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:'10px',opacity:hovered===key?1:0,transition:'opacity .15s',padding:'0 2px',fontFamily:'inherit'}}>x</button>
+                                </div>
+                              );
+                            })}
+                            <div onClick={e=>{e.stopPropagation();openModal(emp,di);}} style={{fontSize:'9px',color:C.purple,textAlign:'center',cursor:'pointer',padding:'1px',opacity:0.7}}>+ shift</div>
+                          </div>
+                        ):(
+                          <div style={{fontSize:'18px',color:C.border,textAlign:'center',paddingTop:'10px',opacity:hovered===key?1:0}}>+</div>
+                        )}
                       </div>
-                      {monthH !== null && (
-                        <div style={{fontSize:'10px',color:C.muted,marginTop:'2px',whiteSpace:'nowrap'}}>
-                          {monthH.toFixed(1)}h/mois
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <table style={{borderCollapse:'collapse',width:'100%',minWidth:'700px'}}>
-            <thead>
-              <tr>
-                <th style={{border:'1px solid '+C.border,padding:'8px',background:C.cardAlt||C.card,minWidth:'80px',textAlign:'left'}}>
-                  <span style={{fontSize:'11px',color:C.muted}}>Jour</span>
-                </th>
-                {sortedEmps.map((emp,ei) => {
-                  const weekH = getEmpWeekHours(emp.id);
-                  return (
-                    <th key={emp.id} style={{border:'1px solid '+C.border,padding:'6px',background:C.cardAlt||C.card,minWidth:'110px',textAlign:'center'}}>
-                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
-                        <div style={{width:'26px',height:'26px',borderRadius:'50%',background:AVATAR_COLORS[ei%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'10px'}}>
-                          {initials(emp.first_name,emp.last_name)}
-                        </div>
-                        <div style={{fontWeight:600,fontSize:'11px'}}>{emp.first_name}</div>
-                        <div style={{fontSize:'10px',color:C.muted}}>{emp.last_name}</div>
-                        <div style={{fontSize:'10px',fontWeight:700,color:C.purple||'#6C5CE7'}}>
-                          {weekH>0 ? weekH.toFixed(1)+'h' : '-'}
-                        </div>
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {weekDates.map((d,dayIdx) => (
-                <tr key={dayIdx} style={{background:dayIdx%2===0?C.card:C.cardAlt||C.card}}>
-                  <td style={{border:'1px solid '+C.border,padding:'8px',fontWeight:700,fontSize:'12px'}}>
-                    <div>{DAYS[dayIdx]}</div>
-                    <div style={{fontSize:'10px',color:C.muted,fontWeight:400}}>{d.getDate()}/{String(d.getMonth()+1).padStart(2,'0')}</div>
-                  </td>
-                  {sortedEmps.map((emp) => renderCell(emp, dayIdx))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* Modal creation creneau */}
-      {modal==='create' && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}} onClick={()=>setModal(null)}>
-          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'24px',width:'340px',boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontWeight:700,fontSize:'15px',marginBottom:'16px',color:C.text}}>Nouveau creneau</div>
-            <div style={{marginBottom:'12px'}}>
-              <label style={lbl}>SALARIE</label>
-              <select style={inp} value={selEmp} onChange={e=>setSelEmp(e.target.value)}>
-                <option value=''>-- Choisir --</option>
-                {employees.filter(e=>e.is_active!==false).map(e => (
-                  <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
-                ))}
-              </select>
+      {/* Modal ajout créneau */}
+      {modal==='add'&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:'20px'}} onClick={()=>setModal(null)}>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'340px',maxHeight:'90vh',overflowY:'auto',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'13px',fontWeight:600,marginBottom:'2px',color:C.text}}>{form.empName}</div>
+            <div style={{fontSize:'11px',color:C.muted,marginBottom:'14px'}}>{form.date}</div>
+
+            {/* Shift 1 */}
+            <div style={{background:C.bg,borderRadius:'8px',padding:'10px',marginBottom:'10px',border:'1px solid '+C.border}}>
+              <div style={{fontSize:'10px',color:C.purple,fontWeight:600,marginBottom:'8px',letterSpacing:'0.08em'}}>SHIFT 1</div>
+              <div style={{marginBottom:'8px'}}><label style={lbl}>TYPE</label>
+                <select style={inp} value={form.shiftId} onChange={e=>{
+                  const sh=dbShifts.find(s=>s.id===e.target.value)||DEFAULT_SHIFTS[0];
+                  setForm(f=>({...f,shiftId:e.target.value,start:sh.start,end:sh.end,breakMinutes:0}));
+                }}>
+                  {dbShifts.map(sh=><option key={sh.id} value={sh.id}>{sh.label}{sh.start!=='00:00'?' ('+sh.start+'-'+sh.end+')':''}</option>)}
+                </select>
+              </div>
+              {form.shiftId !== 'repos' && (
+                <>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px',marginBottom:'6px'}}>
+                    <div>
+                      <label style={lbl}>DEBUT</label>
+                      <input type="time" style={inp} value={form.start} onChange={e=>{
+                        const auto=calcAutoBreak(e.target.value,form.end);
+                        setForm(f=>({...f,start:e.target.value,breakMinutes:auto}));
+                      }}/>
+                      {/* Valeur par défaut en gris */}
+                      {defaultShift && form.start !== defaultShift.start && (
+                        <div style={{fontSize:'9px',color:C.muted,marginTop:'2px',fontStyle:'italic'}}>Défaut: {defaultShift.start}</div>
+                      )}
+                    </div>
+                    <div>
+                      <label style={lbl}>FIN</label>
+                      <input type="time" style={inp} value={form.end} onChange={e=>{
+                        const auto=calcAutoBreak(form.start,e.target.value);
+                        setForm(f=>({...f,end:e.target.value,breakMinutes:auto}));
+                      }}/>
+                      {defaultShift && form.end !== defaultShift.end && (
+                        <div style={{fontSize:'9px',color:C.muted,marginTop:'2px',fontStyle:'italic'}}>Défaut: {defaultShift.end}</div>
+                      )}
+                    </div>
+                    <div>
+                      <label style={lbl}>PAUSE</label>
+                      <input type="number" min="0" max="120" step="15" style={inp} value={form.breakMinutes||0} onChange={e=>setForm(f=>({...f,breakMinutes:parseInt(e.target.value||0)}))}/>
+                    </div>
+                  </div>
+                  {/* Résumé horaires par défaut */}
+                  {defaultShift && !form.existingId && (
+                    <div style={{fontSize:'10px',color:C.muted,background:C.borderLight,padding:'4px 8px',borderRadius:'5px',marginBottom:'6px',fontStyle:'italic'}}>
+                      ⏱ Défaut {defaultShift.label} : {defaultShift.start} – {defaultShift.end}
+                      {isModified && <span style={{color:C.amber,marginLeft:'6px'}}>· Modifié</span>}
+                    </div>
+                  )}
+                  {formNetH>0&&<div style={{fontSize:'10px',color:C.purple,background:C.purpleLight,padding:'4px 8px',borderRadius:'5px'}}>⏱ {formNetH.toFixed(1)}h nettes</div>}
+                </>
+              )}
             </div>
-            <div style={{marginBottom:'12px'}}>
-              <label style={lbl}>JOUR</label>
-              <select style={inp} value={selDay} onChange={e=>setSelDay(Number(e.target.value))}>
-                {weekDates.map((d,i)=>(
-                  <option key={i} value={i}>{DAYS[i]} {d.getDate()}/{String(d.getMonth()+1).padStart(2,'0')}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{marginBottom:'12px'}}>
-              <label style={lbl}>TYPE</label>
-              <select style={inp} value={selShift} onChange={e=>setSelShift(e.target.value)}>
-                {SHIFTS.map(s=>(<option key={s.id} value={s.id}>{s.label}</option>))}
-              </select>
-            </div>
-            {selShift==='custom' && (
-              <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
-                <div style={{flex:1}}><label style={lbl}>DEBUT</label><input type='time' style={inp} value={customStart} onChange={e=>setCustomStart(e.target.value)}/></div>
-                <div style={{flex:1}}><label style={lbl}>FIN</label><input type='time' style={inp} value={customEnd} onChange={e=>setCustomEnd(e.target.value)}/></div>
+
+            {/* Double shift */}
+            {!form.existingId && (
+              <div style={{marginBottom:'10px'}}>
+                <label style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',color:C.muted}}>
+                  <input type="checkbox" checked={form.isDouble||false} onChange={e=>setForm(f=>({...f,isDouble:e.target.checked}))} style={{cursor:'pointer'}}/>
+                  Ajouter un 2ème shift (coupure)
+                </label>
               </div>
             )}
-            <div style={{marginBottom:'16px'}}>
-              <label style={lbl}>NOTE (optionnel)</label>
-              <input type='text' style={inp} value={note} onChange={e=>setNote(e.target.value)} placeholder='ex: remplacement...'/>
+
+            {form.isDouble && (
+              <div style={{background:C.bg,borderRadius:'8px',padding:'10px',marginBottom:'10px',border:'1px solid '+C.amber+'66'}}>
+                <div style={{fontSize:'10px',color:C.amber,fontWeight:600,marginBottom:'8px',letterSpacing:'0.08em'}}>SHIFT 2 (COUPURE)</div>
+                <div style={{marginBottom:'8px'}}><label style={lbl}>TYPE</label>
+                  <select style={inp} value={form.shiftId2||'soir'} onChange={e=>{
+                    const sh=dbShifts.find(s=>s.id===e.target.value)||DEFAULT_SHIFTS[3];
+                    setForm(f=>({...f,shiftId2:e.target.value,start2:sh.start,end2:sh.end}));
+                  }}>
+                    {dbShifts.filter(s=>s.id!=='repos').map(sh=><option key={sh.id} value={sh.id}>{sh.label} ({sh.start}-{sh.end})</option>)}
+                  </select>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px',marginBottom:'6px'}}>
+                  <div><label style={lbl}>DEBUT</label><input type="time" style={inp} value={form.start2||'18:00'} onChange={e=>{const auto=calcAutoBreak(e.target.value,form.end2);setForm(f=>({...f,start2:e.target.value,breakMinutes2:auto}));}}/></div>
+                  <div><label style={lbl}>FIN</label><input type="time" style={inp} value={form.end2||'23:00'} onChange={e=>{const auto=calcAutoBreak(form.start2,e.target.value);setForm(f=>({...f,end2:e.target.value,breakMinutes2:auto}));}}/></div>
+                  <div><label style={lbl}>PAUSE</label><input type="number" min="0" max="120" step="15" style={inp} value={form.breakMinutes2||0} onChange={e=>setForm(f=>({...f,breakMinutes2:parseInt(e.target.value||0)}))}/></div>
+                </div>
+                {form2NetH>0&&<div style={{fontSize:'10px',color:C.amber,background:C.amberLight,padding:'4px 8px',borderRadius:'5px'}}>⏱ {form2NetH.toFixed(1)}h · Total journée: {(formNetH+form2NetH).toFixed(1)}h</div>}
+              </div>
+            )}
+
+            <div style={{marginBottom:'10px'}}><label style={lbl}>NOTE</label>
+              <input style={inp} placeholder="Ex: Service bar..." value={form.note||''} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
             </div>
+
+            {!form.existingId && (
+              <div style={{marginBottom:'14px'}}><label style={{...lbl,marginBottom:'8px'}}>DUPLIQUER SUR</label>
+                <div style={{display:'flex',gap:'5px',flexWrap:'wrap'}}>
+                  {DAYS.map((d,di)=>{const isOrigin=di===form.dayIdx;const checked=isOrigin||dupDays.includes(di);return(
+                    <button key={di} onClick={()=>!isOrigin&&toggleDupDay(di)} style={{padding:'4px 8px',borderRadius:'5px',fontSize:'10px',fontFamily:'inherit',cursor:isOrigin?'default':'pointer',border:'1px solid '+(checked?C.purple:C.border),background:checked?C.purpleLight:'none',color:checked?C.purple:C.muted,opacity:isOrigin?0.5:1}}>{d}</button>
+                  );})}
+                </div>
+              </div>
+            )}
+
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>setModal(null)} style={{flex:1,...btn('none',C.muted),border:'1px solid '+C.border}}>Annuler</button>
-              <button onClick={createShift} style={{flex:1,...btn(C.purple||'#6C5CE7','#fff')}}>Creer</button>
+              <button onClick={()=>setModal(null)} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>
+              <button onClick={saveShift} style={{flex:1,background:C.purple,border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal gestion équipiers */}
+      {modal==='manage'&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:'20px'}} onClick={()=>setModal(null)}>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'380px',maxHeight:'80vh',overflowY:'auto',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'14px',fontWeight:600,marginBottom:'4px',color:C.text}}>Équipiers · {service}</div>
+            <div style={{fontSize:'11px',color:C.muted,marginBottom:'16px'}}>Semaine du {weekLabel}</div>
+            <div style={{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'16px'}}>
+              {allInService.map((emp,i)=>{
+                const isVisible = visibility[emp.id] !== false;
+                return(
+                  <div key={emp.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',background:isVisible?C.bg:C.borderLight,borderRadius:'8px',border:'1px solid '+(isVisible?C.border:C.border+'44')}}>
+                    <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
+                      <button onClick={()=>i>0&&moveEmp(i,i-1)} disabled={i===0} style={{background:'none',border:'none',cursor:i===0?'default':'pointer',color:i===0?C.border:C.muted,fontSize:'10px',padding:'0',lineHeight:1}}>▲</button>
+                      <button onClick={()=>i<allInService.length-1&&moveEmp(i,i+1)} disabled={i===allInService.length-1} style={{background:'none',border:'none',cursor:i===allInService.length-1?'default':'pointer',color:i===allInService.length-1?C.border:C.muted,fontSize:'10px',padding:'0',lineHeight:1}}>▼</button>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:'12px',fontWeight:500,color:isVisible?C.text:C.muted}}>{emp.first_name} {emp.last_name}</div>
+                      <div style={{fontSize:'10px',color:C.muted}}>{emp.role}{emp.is_temp?' · Temp':''}</div>
+                    </div>
+                    <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer'}}>
+                      <input type="checkbox" checked={isVisible} onChange={()=>toggleVisibility(emp.id,isVisible)} style={{cursor:'pointer',width:'16px',height:'16px'}}/>
+                      <span style={{fontSize:'11px',color:C.muted}}>{isVisible?'Visible':'Masqué'}</span>
+                    </label>
+                    {emp.is_temp&&(
+                      <button onClick={()=>deleteTempEmp(emp.id)} style={{background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'5px',padding:'3px 7px',color:C.red,cursor:'pointer',fontSize:'10px',fontFamily:'inherit'}}>Supp.</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={()=>setModal('addTemp')} style={{width:'100%',background:'none',border:'2px dashed '+C.purple+'66',borderRadius:'8px',padding:'10px',color:C.purple,cursor:'pointer',fontSize:'12px',fontFamily:'inherit',marginBottom:'10px'}}>
+              + Ajouter un équipier temporaire
+            </button>
+            <button onClick={()=>setModal(null)} style={{width:'100%',background:C.purple,border:'none',borderRadius:'8px',padding:'10px',color:'#fff',cursor:'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>Fermer</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal équipier temp */}
+      {modal==='addTemp'&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:110,padding:'20px'}} onClick={()=>setModal('manage')}>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'320px',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'14px',fontWeight:600,marginBottom:'14px',color:C.text}}>Équipier temporaire</div>
+            <div style={{marginBottom:'10px'}}><label style={lbl}>PRENOM *</label><input style={inp} value={tempForm.first_name} onChange={e=>setTempForm(f=>({...f,first_name:e.target.value}))} placeholder="Prenom"/></div>
+            <div style={{marginBottom:'10px'}}><label style={lbl}>NOM</label><input style={inp} value={tempForm.last_name} onChange={e=>setTempForm(f=>({...f,last_name:e.target.value}))} placeholder="Nom"/></div>
+            <div style={{marginBottom:'16px'}}><label style={lbl}>ROLE</label><input style={inp} value={tempForm.role} onChange={e=>setTempForm(f=>({...f,role:e.target.value}))} placeholder="Ex: Serveur..."/></div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={()=>setModal('manage')} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>
+              <button onClick={addTempEmployee} style={{flex:1,background:C.purple,border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>Ajouter</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Modal copie semaine */}
-      {copyModal && (
+      {copyModal&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}} onClick={()=>setCopyModal(false)}>
-          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'24px',width:'320px',boxShadow:'0 8px 32px rgba(0,0,0,0.12)'}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontWeight:700,fontSize:'15px',marginBottom:'16px',color:C.text}}>Copier la semaine</div>
-            <div style={{marginBottom:'12px'}}>
-              <label style={lbl}>SALARIE (laisser vide = tous)</label>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'300px',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'13px',fontWeight:600,marginBottom:'14px',color:C.text}}>Copier la semaine</div>
+            <div style={{marginBottom:'12px'}}><label style={lbl}>SALARIE</label>
               <select style={inp} value={copyEmpId} onChange={e=>setCopyEmpId(e.target.value)}>
-                <option value=''>-- Tous les salaries --</option>
-                {employees.filter(e=>e.is_active!==false).map(emp=>(
-                  <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
-                ))}
+                <option value="">-- Choisir --</option>
+                {filtered.map(emp=><option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>)}
               </select>
             </div>
-            <div style={{marginBottom:'12px'}}>
-              <label style={lbl}>SEMAINE CIBLE</label>
-              <div style={{display:'flex',gap:'6px',marginBottom:'6px'}}>
-                <button onClick={()=>setCopyTargetOffset(weekOffset+1)} style={{flex:1,padding:'6px',borderRadius:'6px',border:'1px solid '+(copyTargetOffset===weekOffset+1?C.purple||'#6C5CE7':C.border),background:copyTargetOffset===weekOffset+1?(C.purple||'#6C5CE7'):'none',color:copyTargetOffset===weekOffset+1?'#fff':C.text,cursor:'pointer',fontSize:'12px'}}>Semaine suivante</button>
-                <button onClick={()=>setCopyTargetOffset(weekOffset+2)} style={{flex:1,padding:'6px',borderRadius:'6px',border:'1px solid '+(copyTargetOffset===weekOffset+2?C.purple||'#6C5CE7':C.border),background:copyTargetOffset===weekOffset+2?(C.purple||'#6C5CE7'):'none',color:copyTargetOffset===weekOffset+2?'#fff':C.text,cursor:'pointer',fontSize:'12px'}}>Dans 2 semaines</button>
-              </div>
-              <div style={{fontSize:'11px',color:C.muted,textAlign:'center'}}>
-                Vers: {fmtDate(getMonday(copyTargetOffset))} au {fmtDate(addDays(getMonday(copyTargetOffset),6))}
-              </div>
+            <div style={{display:'flex',gap:'6px',marginBottom:'12px'}}>
+              <button onClick={()=>setCopyTargetOffset(weekOffset+1)} style={{flex:1,padding:'6px',borderRadius:'6px',border:'1px solid '+(copyTargetOffset===weekOffset+1?C.purple:C.border),background:copyTargetOffset===weekOffset+1?C.purpleLight:'none',color:copyTargetOffset===weekOffset+1?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}}>S. suivante</button>
+              <button onClick={()=>setCopyTargetOffset(weekOffset+2)} style={{flex:1,padding:'6px',borderRadius:'6px',border:'1px solid '+(copyTargetOffset===weekOffset+2?C.purple:C.border),background:copyTargetOffset===weekOffset+2?C.purpleLight:'none',color:copyTargetOffset===weekOffset+2?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}}>Dans 2 sem.</button>
             </div>
             <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>setCopyModal(false)} style={{flex:1,...btn('none',C.muted),border:'1px solid '+C.border,padding:'8px',borderRadius:'6px',cursor:'pointer',fontSize:'13px'}}>Annuler</button>
-              <button onClick={copyWeek} style={{flex:1,background:C.purple||'#6C5CE7',border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:'pointer',fontSize:'13px'}}>Copier</button>
+              <button onClick={()=>setCopyModal(false)} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>
+              <button onClick={copyWeek} style={{flex:1,background:C.purple,border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal ajout membre */}
-      {showAddMember && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}} onClick={()=>setShowAddMember(false)}>
-          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'24px',width:'360px',maxHeight:'80vh',overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
-          <div style={{fontWeight:700,fontSize:'15px',marginBottom:'4px',color:C.text}}>Ajouter un salarié dans <span style={{color:C.purple}}>{activeService}</span></div>
-          <div style={{fontSize:'12px',color:C.muted,marginBottom:'16px'}}>Sélectionnez les salariés à afficher dans ce segment (les salariés hors-service apparaissent en premier)</div>
-            <div style={{marginBottom:'16px'}}>
-          {[...employees.filter(e=>e.is_active!==false)].sort((a,b)=>{const inA=a.service===activeService||(a.services_secondaires&&a.services_secondaires.includes(activeService));const inB=b.service===activeService||(b.services_secondaires&&b.services_secondaires.includes(activeService));return inA-inB;}).map(emp => {
-                const currentMembers = sectorMembers[activeService] || [];
-                const isInService = emp.service===activeService || (emp.services_secondaires&&emp.services_secondaires.includes(activeService));
-                const isExtra = currentMembers.includes(emp.id) && !isInService;
-                const checked = isInService || currentMembers.includes(emp.id);
-                return (
-                  <div key={emp.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px',borderRadius:'6px',marginBottom:'4px',background:checked?(C.cardAlt||'rgba(108,92,231,0.05)'):C.card,border:'1px solid '+(checked?C.purple||'#6C5CE7':C.border)}}>
-                    <input type='checkbox'
-                      checked={!!checkedEmps.length ? checkedEmps.includes(emp.id) : checked}
-                      disabled={isInService}
-                      onChange={e => {
-                        if (e.target.checked) { setCheckedEmps(prev => prev.length===0 ? [...(sectorMembers[activeService]||[]),emp.id] : [...prev,emp.id]); }
-                        else { setCheckedEmps(prev => (prev.length===0?(sectorMembers[activeService]||[]):prev).filter(id=>id!==emp.id)); }
-                      }}
-                      style={{width:'16px',height:'16px',cursor:isInService?'default':'pointer'}}
-                    />
-                    <div style={{width:'28px',height:'28px',borderRadius:'50%',background:AVATAR_COLORS[employees.indexOf(emp)%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:'11px',flexShrink:0}}>
-                      {initials(emp.first_name,emp.last_name)}
-                    </div>
-                    <div>
-                      <div style={{fontWeight:600,fontSize:'13px'}}>{emp.first_name} {emp.last_name}</div>
-                  <div style={{fontSize:'11px',color:C.muted}}>{emp.role} · <span style={{color:isInService?C.green:C.purple,fontWeight:600}}>{isInService?'✓ '+activeService:emp.service}</span></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={()=>{setShowAddMember(false);setCheckedEmps([]);}} style={{flex:1,...btn('none',C.muted),border:'1px solid '+C.border,padding:'8px',borderRadius:'6px',cursor:'pointer'}}>Annuler</button>
-              <button onClick={async()=>{
-                const toSave = checkedEmps.length>0 ? checkedEmps : (sectorMembers[activeService]||[]);
-                await saveSectorMembers(activeService, toSave);
-                setShowAddMember(false); setCheckedEmps([]);
-                showToast('Membres mis a jour');
-              }} style={{flex:1,...btn(C.purple||'#6C5CE7','#fff'),padding:'8px',borderRadius:'6px',cursor:'pointer'}}>Enregistrer</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast */}
-      {toast && (
-        <div style={{position:'fixed',bottom:'24px',right:'24px',background:toast.type==='error'?'#EF4444':C.green||'#10B981',color:'#fff',borderRadius:'8px',padding:'10px 16px',fontSize:'13px',fontWeight:600,zIndex:200,boxShadow:'0 4px 12px rgba(0,0,0,0.2)'}}>
-          {toast.msg}
-        </div>
-      )}
+      {toast&&<div style={{position:'fixed',bottom:'24px',right:'24px',background:C.card,border:'1px solid '+C.green,borderRadius:'8px',padding:'10px 16px',fontSize:'12px',color:C.green,zIndex:200,boxShadow:'0 4px 12px '+C.shadow}}>{toast}</div>}
     </div>
   );
 }

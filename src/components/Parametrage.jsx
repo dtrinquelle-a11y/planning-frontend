@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
-import supabase from '../supabase';
+import axios from 'axios';
+
+const API = 'https://mon-planning-production.up.railway.app/api';
 
 const SHIFT_COLORS = {
   matin:      { bg: '#EEF2FF', border: '#7C6FCD', text: '#4338CA' },
@@ -29,17 +31,17 @@ export default function Parametrage() {
 
   async function loadSettings() {
     setLoading(true);
-    const { data } = await supabase.from('app_settings').select('*');
-    const map = {};
-    (data || []).forEach(s => { map[s.key] = s.value; });
-    setSettings(map);
-    setLoading(false);
+    try {
+      const r = await axios.get(API + '/settings');
+      setSettings(r.data);
+    } catch (err) { showToast('Erreur chargement', C.red); }
+    finally { setLoading(false); }
   }
 
   async function saveSetting(key, value) {
     setSaving(true);
     try {
-      await supabase.from('app_settings').update({ value, updated_at: new Date().toISOString() }).eq('key', key);
+      await axios.patch(API + '/settings/' + key, value);
       setSettings(prev => ({ ...prev, [key]: value }));
       showToast('Sauvegardé !');
     } catch (err) {
@@ -55,11 +57,11 @@ export default function Parametrage() {
     { id: 'camping', label: '🏕️ Camping', icon: '🏕️' },
     { id: 'geoloc', label: '📍 Géoloc', icon: '📍' },
     { id: 'cc_hpa', label: '⚖️ CC HPA', icon: '⚖️' },
+    { id: 'pointeuse', label: '📷 Pointeuse', icon: '📷' },
   ];
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace" }}>
-      {/* Header */}
       <div style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.1em', marginBottom: '2px' }}>ADMINISTRATION</div>
@@ -71,18 +73,15 @@ export default function Parametrage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', minHeight: 'calc(100vh - 80px)' }}>
-        {/* Nav latérale */}
         <div style={{ borderRight: '1px solid ' + C.border, padding: '16px', background: C.card }}>
           {sections.map(s => (
             <button key={s.id} onClick={() => setSection(s.id)}
               style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', border: 'none', background: section === s.id ? C.purpleLight : 'none', color: section === s.id ? C.purple : C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: section === s.id ? 600 : 400, marginBottom: '4px', textAlign: 'left' }}>
-              <span style={{ fontSize: '16px' }}>{s.icon}</span>
-              {s.label}
+              <span style={{ fontSize: '16px' }}>{s.icon}</span>{s.label}
             </button>
           ))}
         </div>
 
-        {/* Contenu */}
         <div style={{ padding: '24px', maxWidth: '700px' }}>
           {loading ? (
             <div style={{ color: C.muted, fontSize: '13px' }}>Chargement...</div>
@@ -193,12 +192,8 @@ export default function Parametrage() {
                       <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>Actuellement : {settings.geoloc?.radius || 300}m autour du site</div>
                     </div>
                     <div style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '8px', padding: '12px', fontSize: '12px', color: C.purple }}>
-                      📍 Position actuelle : {settings.geoloc?.lat}, {settings.geoloc?.lon}<br/>
-                      <span style={{ fontSize: '11px', color: C.muted }}>Le Bout du Monde · Verdun-en-Lauragais</span>
+                      📍 {settings.geoloc?.lat}, {settings.geoloc?.lon} · Le Bout du Monde
                     </div>
-                  </div>
-                  <div style={{ background: C.amberLight, border: '1px solid ' + C.amber + '44', borderRadius: '8px', padding: '12px', fontSize: '12px', color: C.amber, marginTop: '12px' }}>
-                    ⚠️ La modification des coordonnées nécessite aussi une mise à jour du backend (timeclock.js)
                   </div>
                   <button onClick={() => saveSetting('geoloc', settings.geoloc)} disabled={saving}
                     style={{ marginTop: '16px', background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 24px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
@@ -213,7 +208,6 @@ export default function Parametrage() {
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Seuils CC HPA · IDCC 1631</div>
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Paramètres de la convention collective Hôtellerie de Plein Air.</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
                     <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '14px' }}>Modulation annuelle</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -227,11 +221,9 @@ export default function Parametrage() {
                           <label style={lbl}>SEUIL MAJORATION 50% (h/an)</label>
                           <input type="number" style={inp} value={settings.cc_hpa?.threshold_25 || 1790}
                             onChange={e => setSettings(prev => ({ ...prev, cc_hpa: { ...prev.cc_hpa, threshold_25: parseInt(e.target.value) } }))} />
-                          <div style={{ fontSize: '10px', color: C.muted, marginTop: '3px' }}>Déclenchement majoration 50%</div>
                         </div>
                       </div>
                     </div>
-
                     <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '14px' }}>Durée hebdomadaire</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -252,7 +244,6 @@ export default function Parametrage() {
                         </div>
                       </div>
                     </div>
-
                     <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px' }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '14px' }}>Période de modulation</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -268,12 +259,60 @@ export default function Parametrage() {
                         </div>
                       </div>
                     </div>
-
                     <div style={{ background: C.greenLight, border: '1px solid ' + C.green + '44', borderRadius: '8px', padding: '12px', fontSize: '12px', color: C.green }}>
-                      ✓ Période actuelle : {settings.cc_hpa?.period_start} → {settings.cc_hpa?.period_end}
+                      ✓ Période : {settings.cc_hpa?.period_start} → {settings.cc_hpa?.period_end}
                     </div>
                   </div>
                   <button onClick={() => saveSetting('cc_hpa', settings.cc_hpa)} disabled={saving}
+                    style={{ marginTop: '20px', background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 24px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+                    {saving ? 'Sauvegarde...' : '💾 Sauvegarder'}
+                  </button>
+                </div>
+              )}
+
+              {/* POINTEUSE */}
+              {section === 'pointeuse' && (
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Paramètres Pointeuse</div>
+                  <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Configuration de la pointeuse et gestion des photos.</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                    <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '14px' }}>Photo au pointage</div>
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '12px', background: C.bg, borderRadius: '8px', border: '1px solid ' + C.border }}>
+                        <div>
+                          <div style={{ fontSize: '13px', color: C.text, fontWeight: 500 }}>Activer la photo</div>
+                          <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>Les salariés devront prendre une photo lors du pointage</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '12px', color: settings.pointeuse?.photo_enabled ? C.green : C.muted, fontWeight: 600 }}>
+                            {settings.pointeuse?.photo_enabled ? 'Activée' : 'Désactivée'}
+                          </span>
+                          <input type="checkbox"
+                            checked={settings.pointeuse?.photo_enabled || false}
+                            onChange={e => setSettings(prev => ({ ...prev, pointeuse: { ...prev.pointeuse, photo_enabled: e.target.checked } }))}
+                            style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: C.purple }} />
+                        </div>
+                      </label>
+                      <div style={{ marginTop: '10px', fontSize: '11px', color: C.muted, padding: '8px', background: settings.pointeuse?.photo_enabled ? C.greenLight : C.borderLight, borderRadius: '6px', border: '1px solid ' + (settings.pointeuse?.photo_enabled ? C.green + '44' : C.border) }}>
+                        {settings.pointeuse?.photo_enabled ? '📷 Photo active — les salariés seront invités à se prendre en photo' : '⬜ Photo désactivée — pointage direct sans caméra'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '10px' }}>Photos enregistrées</div>
+                      <div style={{ fontSize: '12px', color: C.muted, marginBottom: '14px' }}>Accéder aux photos prises lors des pointages dans Supabase Storage.</div>
+                      <a href="https://supabase.com/dashboard/project/akulbjtaflucxkuwptjv/storage/buckets/documents-rh" target="_blank" rel="noreferrer"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '8px', padding: '10px 16px', color: C.purple, fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, textDecoration: 'none' }}>
+                        📁 Voir les photos dans Supabase Storage
+                      </a>
+                      <div style={{ marginTop: '10px', fontSize: '11px', color: C.muted }}>
+                        Chemin : <strong>documents-rh → [employee_id] → pointage → [timestamp].jpg</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button onClick={() => saveSetting('pointeuse', settings.pointeuse)} disabled={saving}
                     style={{ marginTop: '20px', background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 24px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
                     {saving ? 'Sauvegarde...' : '💾 Sauvegarder'}
                   </button>

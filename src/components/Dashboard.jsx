@@ -4,7 +4,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { useTheme } from '../ThemeContext';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
-
 const AVATAR_COLORS = ['#7C6FCD', '#2DB87A', '#F5A623', '#E85D5D'];
 
 function getInitials(first, last) { return (first?.[0] || '') + (last?.[0] || ''); }
@@ -28,8 +27,6 @@ export default function Dashboard() {
   const [presence, setPresence] = useState([]);
   const [todayLogs, setTodayLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [photoEnabled, setPhotoEnabled] = useState(true);
-  const [savingPhotoSetting, setSavingPhotoSetting] = useState(false);
 
   useEffect(() => {
     async function fetchAll() {
@@ -48,20 +45,7 @@ export default function Dashboard() {
       finally { setLoading(false); }
     }
     fetchAll();
-    axios.get(API + '/settings/pointeuse_photo_enabled').then(r => {
-      setPhotoEnabled(r.data.value === null ? true : r.data.value === 'true');
-    }).catch(() => {});
   }, []);
-
-            async function togglePhotoSetting() {
-                const newValue = !photoEnabled;
-                setSavingPhotoSetting(true);
-                try {
-                    await axios.put(API + '/settings/pointeuse_photo_enabled', { value: newValue });
-                    setPhotoEnabled(newValue);
-                } catch (err) { console.error('Erreur maj reglage photo'); }
-                finally { setSavingPhotoSetting(false); }
-            }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", color: C.muted, fontSize: '13px' }}>
@@ -110,7 +94,7 @@ export default function Dashboard() {
           <span style={{ color: C.muted, fontWeight: 400, fontSize: '13px' }}>/ Management</span>
         </div>
         <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          {dateStr} · Periode nov. 2025 → oct. 2026
+          {dateStr} · Période nov. 2025 → oct. 2026
         </div>
       </div>
 
@@ -118,8 +102,8 @@ export default function Dashboard() {
         <div style={s.sectionTitle}>Vue d'ensemble</div>
         <div style={s.statGrid}>
           {[
-            { label: 'Salaries actifs', val: employees.length, color: C.text },
-            { label: 'Heures pointees (cumul)', val: Math.round(totalHeures) + 'h', color: C.purple },
+            { label: 'Salariés actifs', val: employees.length, color: C.text },
+            { label: 'Heures pointées (cumul)', val: Math.round(totalHeures) + 'h', color: C.purple },
             { label: 'En poste maintenant', val: enPoste, color: C.green },
             { label: 'Alertes aujourd\'hui', val: totalAnomalies, color: totalAnomalies > 0 ? C.amber : C.green },
           ].map((item, i) => (
@@ -130,11 +114,11 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div style={{ ...s.card, marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}><div><div style={s.cardTitle}>Pointeuse - Mode test</div><div style={{ fontSize: '12px', color: C.muted, marginTop: '4px' }}>{photoEnabled ? 'Photo obligatoire au pointage (comportement normal).' : 'Photo desactivee - les salaries pointent sans prendre de photo.'}</div></div><button onClick={togglePhotoSetting} disabled={savingPhotoSetting} style={{ padding: '10px 18px', borderRadius: '20px', border: 'none', cursor: savingPhotoSetting ? 'not-allowed' : 'pointer', background: photoEnabled ? C.green : C.border, color: photoEnabled ? '#fff' : C.muted, fontSize: '13px', fontWeight: 600, fontFamily: 'inherit', minWidth: '160px' }}>{savingPhotoSetting ? '...' : (photoEnabled ? 'Photo activee' : 'Photo desactivee')}</button></div><div style={s.twoCol}>
+        <div style={s.twoCol}>
           <div style={s.card}>
             <div style={s.cardTitle}>Modulation annuelle CC HPA</div>
             {modulation.length === 0 ? (
-              <div style={{ color: C.muted, fontSize: '12px' }}>Aucune donnee</div>
+              <div style={{ color: C.muted, fontSize: '12px' }}>Aucune donnée</div>
             ) : modulation.map((m, i) => {
               const pct = (parseFloat(m.heures_travaillees) / parseFloat(m.seuil_legal)) * 100;
               const color = getModulationColor(m.statut, C);
@@ -160,7 +144,7 @@ export default function Dashboard() {
           </div>
 
           <div style={s.card}>
-            <div style={s.cardTitle}>Presence aujourd'hui</div>
+            <div style={s.cardTitle}>Présence aujourd'hui</div>
             {presence.length === 0 ? (
               <div>
                 <div style={{ color: C.muted, fontSize: '12px', marginBottom: '10px' }}>Aucun pointage aujourd'hui</div>
@@ -169,7 +153,7 @@ export default function Dashboard() {
                     <div key={e.id} style={{ borderRadius: '8px', padding: '8px 12px', border: '1px solid ' + C.border, background: C.borderLight }}>
                       <div style={{ fontSize: '11px', fontWeight: 500, color: C.text }}>{e.first_name}</div>
                       <div style={{ fontSize: '10px', color: C.muted, marginTop: '2px' }}>
-                        <span style={s.dot(C.muted)} />Non pointe
+                        <span style={s.dot(C.muted)} />Non pointé
                       </div>
                     </div>
                   ))}
@@ -212,7 +196,6 @@ export default function Dashboard() {
                   <div style={{ flex: 1 }}>
                     <span style={s.badge(C.redLight, C.red)}>Hors site</span>
                     <span style={{ marginLeft: '8px', color: C.text }}>{log.first_name} {log.last_name}</span>
-                    <span style={{ color: C.muted, marginLeft: '8px', fontSize: '11px' }}>{log.action === 'in' ? 'Arrivee' : 'Depart'} hors perimetre</span>
                   </div>
                   <span style={{ fontSize: '11px', color: C.muted }}>{log.scanned_at ? new Date(log.scanned_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                 </div>
@@ -221,13 +204,13 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={s.sectionTitle}>Heures travaillees vs seuil legal (1 607h)</div>
+        <div style={s.sectionTitle}>Heures travaillées vs seuil légal (1 607h)</div>
         <div style={s.card}>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
               <XAxis dataKey="name" tick={{ fill: C.muted, fontSize: 11 }} axisLine={{ stroke: C.border }} tickLine={false} />
               <YAxis tick={{ fill: C.muted, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', fontSize: '12px', color: C.text }} formatter={val => [val + 'h travaillees']} />
+              <Tooltip contentStyle={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', fontSize: '12px', color: C.text }} formatter={val => [val + 'h travaillées']} />
               <Bar dataKey="heures" radius={[4,4,0,0]}>
                 {chartData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
               </Bar>

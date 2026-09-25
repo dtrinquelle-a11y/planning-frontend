@@ -162,7 +162,10 @@ export default function Planning() {
     if (!planningRef.current) return;
     setExportingPDF(true); showToast('Generation PDF...');
     try {
-      const canvas = await html2canvas(planningRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
+      const canvas = await html2canvas(planningRef.current, {
+        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+        ignoreElements: el => el.hasAttribute && el.hasAttribute('data-pdf-hide'),
+      });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -415,17 +418,20 @@ export default function Planning() {
                     <div style={{minWidth:0,flex:1}}>
                       <div style={{fontSize:'11px',fontWeight:500,lineHeight:1.2,color:'#1A1D27',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
                       <div style={{fontSize:'9px',color:'#6B7280'}}>{emp.role}</div>
-                      {totalH>0?(
-                        <div style={{fontSize:'9px',fontWeight:700,color:hColor,marginTop:'3px',display:'flex',alignItems:'center',gap:'3px'}}>
-                          <div style={{width:'5px',height:'5px',borderRadius:'50%',background:hColor,flexShrink:0}}/>
-                          Sem: {totalH.toFixed(1)}h / {contractH}h
-                        </div>
-                      ):<div style={{fontSize:'9px',color:'#E5E7EB',marginTop:'3px'}}>Sem: 0h / {contractH}h</div>}
-                      <div style={{marginTop:'4px',padding:'3px 5px',background:'#F4F6FA',borderRadius:'4px',border:'1px solid #E2E5ED'}}>
-                        <div style={{fontSize:'8px',color:'#6B7280',marginBottom:'2px'}}>CE MOIS</div>
-                        <div style={{display:'flex',gap:'6px'}}>
-                          <div style={{fontSize:'9px',color:'#6C5FCD',fontWeight:600}}>📅 {(monthly.heures_planifiees||0).toFixed(1)}h plan.</div>
-                          <div style={{fontSize:'9px',color:'#16A34A',fontWeight:600}}>✓ {(monthly.heures_realisees||0).toFixed(1)}h réal.</div>
+                      {/* Compteurs : visibles a l'ecran, exclus du PDF (data-pdf-hide) */}
+                      <div data-pdf-hide>
+                        {totalH>0?(
+                          <div style={{fontSize:'9px',fontWeight:700,color:hColor,marginTop:'3px',display:'flex',alignItems:'center',gap:'3px'}}>
+                            <div style={{width:'5px',height:'5px',borderRadius:'50%',background:hColor,flexShrink:0}}/>
+                            Sem: {totalH.toFixed(1)}h / {contractH}h
+                          </div>
+                        ):<div style={{fontSize:'9px',color:'#E5E7EB',marginTop:'3px'}}>Sem: 0h / {contractH}h</div>}
+                        <div style={{marginTop:'4px',padding:'3px 5px',background:'#F4F6FA',borderRadius:'4px',border:'1px solid #E2E5ED'}}>
+                          <div style={{fontSize:'8px',color:'#6B7280',marginBottom:'2px'}}>CE MOIS</div>
+                          <div style={{display:'flex',gap:'6px'}}>
+                            <div style={{fontSize:'9px',color:'#6C5FCD',fontWeight:600}}>📅 {(monthly.heures_planifiees||0).toFixed(1)}h plan.</div>
+                            <div style={{fontSize:'9px',color:'#16A34A',fontWeight:600}}>✓ {(monthly.heures_realisees||0).toFixed(1)}h réal.</div>
+                          </div>
                         </div>
                       </div>
                     </div>

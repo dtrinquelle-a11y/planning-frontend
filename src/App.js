@@ -14,6 +14,7 @@ import GED from './components/GED';
 import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
+import Confidentialite from './components/Confidentialite';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -23,11 +24,12 @@ function AppInner() {
   const [loadingMsg, setLoadingMsg] = useState('Chargement...');
   const [page, setPage] = useState(null);
   const isOnboarding = window.location.pathname === '/onboarding';
+  const isConfidentialite = window.location.pathname === '/confidentialite';
   const authRequestId = useRef(0);
   const justLoggedInRef = useRef(false);
 
   useEffect(() => {
-    if (isOnboarding) { setLoading(false); return; }
+    if (isOnboarding || isConfidentialite) { setLoading(false); return; }
 
     // Strategie simplifiee: utiliser UNIQUEMENT onAuthStateChange.
     // L'evenement INITIAL_SESSION est fiable et arrive toujours en premier.
@@ -135,6 +137,7 @@ function AppInner() {
   }
 
   if (isOnboarding) return <Onboarding />;
+  if (isConfidentialite) return <Confidentialite />;
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", gap: '16px' }}>
@@ -183,6 +186,7 @@ function AppInner() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button onClick={toggle} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: C.muted }}>{darkMode ? '☀️' : '🌙'}</button>
           {empName && <span style={{ fontSize: '12px', color: C.muted }}>{empName}</span>}
+          <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: C.muted }}>Confidentialité</a>
           <button onClick={handleLogout} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px' }}>Déconnexion</button>
           <HelpPanel />
         </div>

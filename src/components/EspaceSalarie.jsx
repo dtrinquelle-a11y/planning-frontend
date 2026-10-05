@@ -21,8 +21,10 @@ function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
 function getMonday(offset){const now=new Date();const day=now.getDay();const diff=now.getDate()-day+(day===0?-6:1)+offset*7;const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);return mon;}
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
 
-export default function EspaceSalarie() {
+export default function EspaceSalarie({ profile }) {
   const { colors: C } = useTheme();
+  const isManager = profile?.role === 'admin' || profile?.role === 'manager';
+  const ownEmployee = profile?.employees || null;
   const [employees,setEmployees]=useState([]);
   const [selectedEmp,setSelectedEmp]=useState(null);
   const [tab,setTab]=useState('planning');
@@ -35,7 +37,12 @@ export default function EspaceSalarie() {
   const endMon=addDays(mon,6);
   const weekLabel=mon.getDate()+' '+months[mon.getMonth()]+' -> '+endMon.getDate()+' '+months[endMon.getMonth()];
 
-  useEffect(()=>{axios.get(API+'/employees').then(r=>{setEmployees(r.data);if(r.data.length>0)setSelectedEmp(r.data[0]);}).catch(()=>{});},[]);
+  // Un salarie ne voit que sa propre fiche ; seuls les managers peuvent choisir un autre salarie
+  useEffect(()=>{
+    if(!isManager){ if(ownEmployee){setEmployees([ownEmployee]);setSelectedEmp(ownEmployee);} return; }
+    axios.get(API+'/employees').then(r=>{setEmployees(r.data);if(r.data.length>0)setSelectedEmp(r.data[0]);}).catch(()=>{});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[isManager, ownEmployee?.id]);
   useEffect(()=>{if(!selectedEmp)return;axios.get(API+'/schedules?week='+fmtDate(mon)).then(r=>{setShifts(r.data.filter(s=>s.employee_id===selectedEmp.id));}).catch(()=>{});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[selectedEmp,weekOffset]);
@@ -83,9 +90,11 @@ export default function EspaceSalarie() {
       <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'16px 20px',boxShadow:C.shadow+' 0 1px 4px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'10px'}}>
           <div style={{fontSize:'13px',fontWeight:600,color:C.text}}><span style={{color:C.purple}}>▸</span> MON PLANNING</div>
-          <select style={{...inp,width:'auto',fontSize:'12px',padding:'5px 10px'}} value={selectedEmp.id} onChange={e=>setSelectedEmp(employees.find(em=>em.id===e.target.value))}>
-            {employees.map(emp=><option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>)}
-          </select>
+          {isManager&&(
+            <select style={{...inp,width:'auto',fontSize:'12px',padding:'5px 10px'}} value={selectedEmp.id} onChange={e=>setSelectedEmp(employees.find(em=>em.id===e.target.value))}>
+              {employees.map(emp=><option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>)}
+            </select>
+          )}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'14px',padding:'12px',background:C.bg,borderRadius:'10px',marginBottom:'14px',border:'1px solid '+C.border}}>
           <div style={{width:'48px',height:'48px',borderRadius:'50%',background:avatarColor+'22',border:'1px solid '+avatarColor+'44',color:avatarColor,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',fontWeight:600,flexShrink:0}}>{initials(selectedEmp.first_name,selectedEmp.last_name)}</div>

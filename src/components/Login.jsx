@@ -53,6 +53,7 @@ export default function Login({ onLogin }) {
         </div>
         <div style={{ textAlign: 'center', marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
           <span style={{ fontSize: '11px', color: C.muted }}>Mot de passe oublie ? Contactez votre manager.</span>
+          <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: C.muted }}>Confidentialité</a>
           <button onClick={toggle} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>
             {darkMode ? '☀️' : '🌙'}
           </button>

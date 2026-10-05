@@ -21,6 +21,7 @@ export default function Onboarding() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [employeeId, setEmployeeId] = useState(null);
+  const [privacyAck, setPrivacyAck] = useState(false);
 
   useEffect(() => {
     supabase.from('onboarding_fields').select('*').eq('is_active', true).order('sort_order').then(({ data }) => {
@@ -31,8 +32,16 @@ export default function Onboarding() {
   async function validateCode() {
     setError(''); setLoading(true);
     try {
-      const { data } = await supabase.from('onboarding_invitations').select('*').eq('code', code.trim().toUpperCase()).eq('is_active', true).single();
-      if (!data) { setError('Code invalide. Verifiez le code fourni par votre employeur.'); return; }
+      // Verification cote serveur : la table des invitations n'est pas lisible publiquement
+      let valid = false;
+      const { data: ok, error: rpcError } = await supabase.rpc('check_invitation_code', { p_code: code });
+      if (!rpcError) valid = ok === true;
+      else {
+        // Repli tant que la fonction n'est pas deployee en base
+        const { data } = await supabase.from('onboarding_invitations').select('id').eq('code', code.trim().toUpperCase()).eq('is_active', true).maybeSingle();
+        valid = !!data;
+      }
+      if (!valid) { setError('Code invalide. Verifiez le code fourni par votre employeur.'); return; }
       setStep('identity');
     } catch { setError('Code invalide.'); }
     finally { setLoading(false); }
@@ -45,6 +54,7 @@ export default function Onboarding() {
         setError('Tous les champs sont obligatoires.'); return;
       }
       if (identity.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caracteres.'); return; }
+      if (!privacyAck) { setError('Veuillez prendre connaissance de la politique de confidentialite.'); return; }
       const email = identity.email.trim().toLowerCase();
 
       // Créer le compte Supabase Auth
@@ -196,7 +206,11 @@ export default function Onboarding() {
               <div><label style={lbl}>NOM *</label><input style={inp} value={identity.last_name} onChange={e => setIdentity(i => ({ ...i, last_name: e.target.value }))} placeholder="Dupont" /></div>
             </div>
             <div style={{ marginBottom: '12px' }}><label style={lbl}>EMAIL *</label><input type="email" style={inp} value={identity.email} onChange={e => setIdentity(i => ({ ...i, email: e.target.value }))} placeholder="jean.dupont@email.com" /></div>
-            <div style={{ marginBottom: '20px' }}><label style={lbl}>MOT DE PASSE * (min. 6 caracteres)</label><input type="password" style={inp} value={identity.password} onChange={e => setIdentity(i => ({ ...i, password: e.target.value }))} placeholder="••••••••" /></div>
+            <div style={{ marginBottom: '16px' }}><label style={lbl}>MOT DE PASSE * (min. 6 caracteres)</label><input type="password" style={inp} value={identity.password} onChange={e => setIdentity(i => ({ ...i, password: e.target.value }))} placeholder="••••••••" /></div>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '20px', fontSize: '12px', color: C.muted, lineHeight: 1.5, cursor: 'pointer' }}>
+              <input type="checkbox" checked={privacyAck} onChange={e => setPrivacyAck(e.target.checked)} style={{ marginTop: '2px', cursor: 'pointer' }} />
+              <span>J'ai pris connaissance de la <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ color: C.purple }}>politique de confidentialité</a> et du traitement de mes données pour mon dossier d'embauche. *</span>
+            </label>
             {error && <div style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: C.red, marginBottom: '14px' }}>{error}</div>}
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={() => setStep('code')} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>← Retour</button>
@@ -272,6 +286,7 @@ export default function Onboarding() {
 
         <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '11px', color: C.muted }}>
           Le Bout du Monde · 2 chemin de Rhodes, 11400 Verdun-en-Lauragais
+          <br /><a href="/confidentialite" target="_blank" rel="noreferrer" style={{ color: C.muted }}>Politique de confidentialité</a>
         </div>
       </div>
     </div>

@@ -45,28 +45,40 @@ export default function Onboarding() {
         setError('Tous les champs sont obligatoires.'); return;
       }
       if (identity.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caracteres.'); return; }
+      const email = identity.email.trim().toLowerCase();
 
       // Créer le compte Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: identity.email,
+        email,
         password: identity.password,
       });
       if (authError) throw authError;
+      // Email deja inscrit : Supabase renvoie un utilisateur sans identite
+      if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
+        setError('Un compte existe deja avec cet email. Connectez-vous sur l\'application.'); return;
+      }
+      // Sans session (confirmation email active), l'envoi des pieces justificatives echouerait
+      if (!authData.session) {
+        setError('Compte cree, mais une confirmation par email est requise. Contactez votre responsable.'); return;
+      }
 
       // Vérifier si l'email existe déjà dans employees
-      const { data: existing } = await supabase.from('employees').select('id').eq('email', identity.email).single();
+      const { data: existing } = await supabase.from('employees').select('id, first_name, last_name').ilike('email', email).maybeSingle();
 
       let empId;
       if (existing) {
-        // L'email existe déjà — on lie juste le compte auth
+        // L'email existe déjà — on lie juste le compte auth (et on complete le nom s'il manque)
         empId = existing.id;
-        await supabase.from('employees').update({ onboarding_completed: false }).eq('id', empId);
+        const patch = { onboarding_completed: false };
+        if (!existing.first_name) patch.first_name = identity.first_name.trim();
+        if (!existing.last_name) patch.last_name = identity.last_name.trim();
+        await supabase.from('employees').update(patch).eq('id', empId);
       } else {
         // Créer le salarié
         const { data: emp, error: empError } = await supabase.from('employees').insert({
-          first_name: identity.first_name,
-          last_name: identity.last_name,
-          email: identity.email,
+          first_name: identity.first_name.trim(),
+          last_name: identity.last_name.trim(),
+          email,
           service: 'Non defini',
           contract_type: 'Non defini',
           role: 'Employe',
@@ -77,13 +89,16 @@ export default function Onboarding() {
         }).select().single();
         if (empError) throw empError;
         empId = emp.id;
-        // Initialiser le compteur de modulation
-        await supabase.from('modulation_counter').insert({ employee_id: empId, period_start: '2025-11-01', period_end: '2026-10-31' });
+        // Initialiser le compteur de modulation sur la periode CC HPA en cours (1er nov -> 31 oct)
+        const now = new Date();
+        const startYear = now.getMonth() >= 10 ? now.getFullYear() : now.getFullYear() - 1;
+        await supabase.from('modulation_counter').insert({ employee_id: empId, period_start: startYear + '-11-01', period_end: (startYear + 1) + '-10-31' });
       }
 
       // Lier le profil auth au salarié
       if (authData.user) {
-        await supabase.from('user_profiles').update({ employee_id: empId, role: 'salarie' }).eq('id', authData.user.id);
+        const { error: profileError } = await supabase.from('user_profiles').update({ employee_id: empId, role: 'salarie' }).eq('id', authData.user.id);
+        if (profileError) throw profileError;
       }
 
       setEmployeeId(empId);
@@ -94,12 +109,16 @@ export default function Onboarding() {
   }
 
   async function submitForm() {
-    setError(''); setLoading(true);
+    setError('');
+    const missing = fields.filter(f => f.required && (f.field_type === 'file' ? !files[f.id] : !String(responses[f.id] || '').trim()));
+    if (missing.length) { setError('Champs obligatoires manquants : ' + missing.map(f => f.label).join(', ')); return; }
+    setLoading(true);
     try {
       const textFields = fields.filter(f => f.field_type !== 'file');
       for (const field of textFields) {
         if (responses[field.id]) {
-          await supabase.from('onboarding_responses').upsert({ employee_id: employeeId, field_id: field.id, value: responses[field.id] });
+          const { error: respError } = await supabase.from('onboarding_responses').upsert({ employee_id: employeeId, field_id: field.id, value: responses[field.id] }, { onConflict: 'employee_id,field_id' });
+          if (respError) throw respError;
         }
       }
 
@@ -113,11 +132,14 @@ export default function Onboarding() {
         const filePath = employeeId + '/onboarding/' + field.id + '.' + ext;
         const { error: uploadError } = await supabase.storage.from('documents-rh').upload(filePath, file, { contentType: file.type, upsert: true });
         if (uploadError) throw uploadError;
-        await supabase.from('documents').upsert({ employee_id: employeeId, type: 'autre', title: field.label, file_path: filePath, file_name: file.name, file_size: file.size, mime_type: file.type });
-        await supabase.from('onboarding_responses').upsert({ employee_id: employeeId, field_id: field.id, value: filePath });
+        const { error: docError } = await supabase.from('documents').insert({ employee_id: employeeId, type: 'autre', title: field.label, file_path: filePath, file_name: file.name, file_size: file.size, mime_type: file.type });
+        if (docError) throw docError;
+        const { error: respError } = await supabase.from('onboarding_responses').upsert({ employee_id: employeeId, field_id: field.id, value: filePath }, { onConflict: 'employee_id,field_id' });
+        if (respError) throw respError;
       }
 
-      await supabase.from('employees').update({ onboarding_completed: true }).eq('id', employeeId);
+      const { error: doneError } = await supabase.from('employees').update({ onboarding_completed: true }).eq('id', employeeId);
+      if (doneError) throw doneError;
       setStep('done');
     } catch (err) {
       setError(err.message || 'Erreur lors de la soumission.');

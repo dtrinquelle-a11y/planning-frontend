@@ -51,7 +51,9 @@ function AppInner() {
         setSession(sess);
         if (sess) {
           authRequestId.current += 1;
-          await loadProfile(sess, authRequestId.current);
+          // Differe hors du callback : un appel Supabase attendu ici bloque le verrou de session (recommandation Supabase)
+          const reqId = authRequestId.current;
+          setTimeout(() => loadProfile(sess, reqId), 0);
         } else {
           setLoading(false);
         }
@@ -73,7 +75,8 @@ function AppInner() {
       setSession(sess);
       if (sess) {
         authRequestId.current += 1;
-        await loadProfile(sess, authRequestId.current);
+        const reqId = authRequestId.current;
+        setTimeout(() => loadProfile(sess, reqId), 0);
       } else { setProfile(null); setLoading(false); }
     });
 

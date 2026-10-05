@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import supabase from '../supabase';
+import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
+
+// Client dedie a l'onboarding : session en memoire, isolee de l'application.
+// Evite d'attendre le verrou de session d'un autre onglet et de deconnecter un manager connecte.
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storageKey: 'sb-onboarding', persistSession: false, detectSessionInUrl: false },
+});
+
+// Evite un chargement infini si le reseau ne repond pas
+function withTimeout(promise, ms = 15000) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('Le serveur ne repond pas, veuillez reessayer.')), ms))]);
+}
 
 const C = {
   bg: '#F4F6FA', card: '#FFFFFF', border: '#E2E5ED',
@@ -33,17 +45,11 @@ export default function Onboarding() {
     setError(''); setLoading(true);
     try {
       // Verification cote serveur : la table des invitations n'est pas lisible publiquement
-      let valid = false;
-      const { data: ok, error: rpcError } = await supabase.rpc('check_invitation_code', { p_code: code });
-      if (!rpcError) valid = ok === true;
-      else {
-        // Repli tant que la fonction n'est pas deployee en base
-        const { data } = await supabase.from('onboarding_invitations').select('id').eq('code', code.trim().toUpperCase()).eq('is_active', true).maybeSingle();
-        valid = !!data;
-      }
-      if (!valid) { setError('Code invalide. Verifiez le code fourni par votre employeur.'); return; }
+      const { data: ok, error: rpcError } = await withTimeout(supabase.rpc('check_invitation_code', { p_code: code }));
+      if (rpcError) throw rpcError;
+      if (ok !== true) { setError('Code invalide. Verifiez le code fourni par votre employeur.'); return; }
       setStep('identity');
-    } catch { setError('Code invalide.'); }
+    } catch (err) { setError(err.message || 'Erreur de verification du code.'); }
     finally { setLoading(false); }
   }
 
@@ -58,10 +64,10 @@ export default function Onboarding() {
       const email = identity.email.trim().toLowerCase();
 
       // Créer le compte Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await withTimeout(supabase.auth.signUp({
         email,
         password: identity.password,
-      });
+      }));
       if (authError) throw authError;
       // Email deja inscrit : Supabase renvoie un utilisateur sans identite
       if (authData.user && authData.user.identities && authData.user.identities.length === 0) {

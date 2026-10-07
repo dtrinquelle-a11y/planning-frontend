@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
 import { absenceType, absenceCovers } from '../absences';
+import { checkEmployeeWeek } from '../legalChecks';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
@@ -73,6 +74,8 @@ export default function Planning() {
   const [exportingPDF, setExportingPDF] = useState(false);
   const [savingShift, setSavingShift] = useState(false);
   const [absences, setAbsences] = useState([]); // absences acceptees ou en attente sur la semaine
+  const [contextShifts, setContextShifts] = useState([]); // creneaux des semaines voisines (repos a cheval sur deux semaines)
+  const [showAlerts, setShowAlerts] = useState(false);
   const [tempForm, setTempForm] = useState({ first_name: '', last_name: '', role: '' });
   const [dragEmpIdx, setDragEmpIdx] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
@@ -95,6 +98,7 @@ export default function Planning() {
     loadShifts();
     loadVisibility();
     loadAbsences();
+    loadContextShifts();
     loadMonthlySummary();
   }, [weekOffset, service]); // eslint-disable-line
 
@@ -132,6 +136,21 @@ export default function Planning() {
     });
     setShiftsMap(map);
   }
+
+  // Semaines precedente et suivante : necessaires pour les repos quotidien et hebdomadaire en debut/fin de semaine
+  async function loadContextShifts() {
+    const [prev, next] = await Promise.all([
+      axios.get(API+'/schedules?week='+fmtDate(addDays(mon,-7))).catch(()=>({data:[]})),
+      axios.get(API+'/schedules?week='+fmtDate(addDays(mon,7))).catch(()=>({data:[]})),
+    ]);
+    setContextShifts([...prev.data, ...next.data]);
+  }
+
+  // Creneaux de la semaine affichee pour un salarie (depuis la grille)
+  const weekShiftsOf = empId => Object.entries(shiftsMap).filter(([k]) => k.startsWith(empId + '-')).flatMap(([, arr]) => arr);
+  // Alertes legales d'un salarie ; currentOverride remplace les creneaux de la semaine (simulation avant enregistrement)
+  const legalAlerts = (empId, currentOverride) =>
+    checkEmployeeWeek([...contextShifts.filter(s => s.employee_id === empId), ...(currentOverride || weekShiftsOf(empId))], fmtDate(mon));
 
   async function loadMonthlySummary() {
     const r = await axios.get(API+'/schedules/monthly-summary?month='+currentMonth).catch(()=>({data:{}}));
@@ -249,6 +268,21 @@ export default function Planning() {
       const dates = [form.date, ...dupDays.filter(d => d !== form.dayIdx).map(di => fmtDate(addDays(mon, di)))];
       const conflits = dates.filter(d => absences.some(a => a.employee_id === form.empId && a.status === 'acceptee' && absenceCovers(a, d)));
       if (conflits.length && !window.confirm(form.empName + ' est en absence acceptée le ' + conflits.map(d => d.split('-').reverse().join('/')).join(', ') + '.\nPlanifier quand même ?')) return;
+    }
+    // Controles legaux : on simule la semaine avec le(s) nouveau(x) creneau(x) et on signale les nouvelles alertes
+    if (form.shiftId !== 'repos') {
+      const mk = (date, start, end, brk, type) => ({ employee_id: form.empId, work_date: date, start_time: start, end_time: end, break_minutes: brk, shift_type: type });
+      const current = weekShiftsOf(form.empId).filter(sh => sh.id !== form.existingId);
+      const days = [form.dayIdx, ...dupDays.filter(d => d !== form.dayIdx)];
+      const added = days.flatMap(di => {
+        const date = fmtDate(addDays(mon, di));
+        const list = [mk(date, form.start, form.end, form.breakMinutes || 0, form.shiftId)];
+        if (form.isDouble && form.shiftId2 !== 'repos') list.push(mk(date, form.start2, form.end2, form.breakMinutes2 || 0, form.shiftId2));
+        return list;
+      });
+      const before = new Set(legalAlerts(form.empId).map(a => a.message));
+      const nouvelles = legalAlerts(form.empId, [...current, ...added]).filter(a => !before.has(a.message));
+      if (nouvelles.length && !window.confirm('Attention, contrôle légal pour ' + form.empName + ' :\n- ' + nouvelles.map(a => a.message).join('\n- ') + '\n\nEnregistrer quand même ?')) return;
     }
     setSavingShift(true);
     try {
@@ -401,6 +435,18 @@ export default function Planning() {
         <span style={{fontSize:'10px',color:C.muted,marginLeft:'auto'}}>Pause auto CC HPA · Max 48h/sem</span>
       </div>
 
+      {/* Alertes legales de la semaine (non exportees dans le PDF) */}
+      {(()=>{const list=filtered.map(e=>({emp:e,alerts:legalAlerts(e.id)})).filter(x=>x.alerts.length);if(!list.length)return null;const total=list.reduce((n,x)=>n+x.alerts.length,0);return(
+        <div style={{margin:'12px 24px 0',background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',color:C.text}}>
+          <div onClick={()=>setShowAlerts(v=>!v)} style={{cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span>⚠️ <strong>{total} alerte{total>1?'s':''} légale{total>1?'s':''}</strong> cette semaine ({list.length} salarié{list.length>1?'s':''})</span>
+            <span style={{fontSize:'11px',color:C.muted}}>{showAlerts?'Masquer':'Voir le détail'}</span>
+          </div>
+          {showAlerts&&<div style={{marginTop:'8px',display:'flex',flexDirection:'column',gap:'4px'}}>
+            {list.map(x=>(<div key={x.emp.id}><strong>{x.emp.first_name} {x.emp.last_name}</strong><ul style={{margin:'2px 0 0',paddingLeft:'18px',color:C.muted}}>{x.alerts.map((a,i)=><li key={i}>{a.message}</li>)}</ul></div>))}
+          </div>}
+        </div>);})()}
+
       {/* Grille planning */}
       <div style={{padding:'20px 24px'}}>
         {filtered.length===0?(
@@ -445,6 +491,9 @@ export default function Planning() {
                       <div style={{fontSize:'9px',color:'#6B7280'}}>{emp.role}</div>
                       {/* Compteurs : visibles a l'ecran, exclus du PDF (data-pdf-hide) */}
                       <div data-pdf-hide>
+                        {(()=>{const al=legalAlerts(emp.id);return al.length?(
+                          <div title={al.map(a=>'• '+a.message).join('\n')} style={{fontSize:'9px',fontWeight:700,color:'#B45309',marginTop:'3px',cursor:'help'}}>⚠️ {al.length} alerte{al.length>1?'s':''} légale{al.length>1?'s':''}</div>
+                        ):null;})()}
                         {totalH>0?(
                           <div style={{fontSize:'9px',fontWeight:700,color:hColor,marginTop:'3px',display:'flex',alignItems:'center',gap:'3px'}}>
                             <div style={{width:'5px',height:'5px',borderRadius:'50%',background:hColor,flexShrink:0}}/>

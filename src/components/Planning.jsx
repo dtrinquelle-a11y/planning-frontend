@@ -293,16 +293,19 @@ export default function Planning() {
     const tm=getMonday(copyTargetOffset);
     const es=Object.entries(shiftsMap).filter(([k])=>k.startsWith(copyEmpId+'-'));
     if(!es.length){showToast('Aucun creneau');return;}
-    let cp=0;
+    let cp=0, failed=0;
     for(const[k,shArr]of es){
-      const sd=new Date(k.split('-').slice(1).join('-'));
+      // La cle est "<uuid salarie>-AAAA-MM-JJ" : l'uuid contient lui-meme des tirets, on lit donc la date apres le prefixe
+      const sd=new Date(k.slice(copyEmpId.length+1)+'T00:00:00');
       const di=(sd.getDay()+6)%7;
       const dd=fmtDate(addDays(tm,di));
       for (const sh of (Array.isArray(shArr)?shArr:[shArr])) {
-        try{await axios.post(API+'/schedules',{employee_id:copyEmpId,work_date:dd,start_time:sh.start_time,end_time:sh.end_time,shift_type:sh.shift_type,break_minutes:sh.break_minutes||0,note:sh.note||null});cp++;}catch{}
+        try{await axios.post(API+'/schedules',{employee_id:copyEmpId,work_date:dd,start_time:sh.start_time,end_time:sh.end_time,shift_type:sh.shift_type,break_minutes:sh.break_minutes||0,note:sh.note||null});cp++;}catch{failed++;}
       }
     }
-    setCopyModal(false); showToast(cp+' creneau(x) copies');
+    setCopyModal(false);
+    showToast(cp+' creneau(x) copies'+(failed?' · '+failed+' en erreur':''));
+    if (copyTargetOffset===weekOffset) loadShifts();
   }
 
   async function moveEmp(fromIdx, toIdx) {

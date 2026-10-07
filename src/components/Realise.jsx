@@ -21,6 +21,21 @@ export default function Realise() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [onlyIssues, setOnlyIssues] = useState(false);
+  // Alerte email en cas d'oubli de pointage (reglage partage, applique par le serveur toutes les 5 min)
+  const [alertCfg, setAlertCfg] = useState({ enabled: false, delay_min: 30 });
+  const [alertMsg, setAlertMsg] = useState('');
+  useEffect(() => {
+    axios.get(API + '/settings/alertes_pointage').then(r => { if (r.data?.value) setAlertCfg(c => ({ ...c, ...r.data.value })); }).catch(() => {});
+  }, []);
+  async function saveAlertCfg(next) {
+    const prev = alertCfg;
+    setAlertCfg(next);
+    try {
+      await axios.patch(API + '/settings/alertes_pointage', next);
+      setAlertMsg(next.enabled ? 'Alertes activées' : 'Alertes désactivées');
+    } catch { setAlertCfg(prev); setAlertMsg('Erreur, réglage non enregistré'); }
+    setTimeout(() => setAlertMsg(''), 2500);
+  }
   const mon = getMonday(weekOffset);
   const end = new Date(mon); end.setDate(mon.getDate() + 6);
 
@@ -54,6 +69,25 @@ export default function Realise() {
               <input type="checkbox" checked={onlyIssues} onChange={e => setOnlyIssues(e.target.checked)} /> Anomalies seulement
             </label>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '14px', padding: '10px 14px', background: C.card, border: '1px solid ' + (alertCfg.enabled ? C.green + '88' : C.border), borderRadius: '8px' }}>
+          <button onClick={() => saveAlertCfg({ ...alertCfg, enabled: !alertCfg.enabled })} aria-pressed={alertCfg.enabled}
+            style={{ width: '42px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', position: 'relative', background: alertCfg.enabled ? C.green : C.border, transition: 'background .2s', flexShrink: 0 }}>
+            <span style={{ position: 'absolute', top: '3px', left: alertCfg.enabled ? '21px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+          </button>
+          <div style={{ fontSize: '12px' }}>
+            <strong>🔔 Me prévenir des oublis de pointage</strong>
+            <div style={{ fontSize: '11px', color: C.muted }}>Email aux managers si une arrivée ou un départ n'est pas pointé, une fois par créneau.</div>
+          </div>
+          <label style={{ fontSize: '11px', color: C.muted, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Délai
+            <select value={alertCfg.delay_min} onChange={e => saveAlertCfg({ ...alertCfg, delay_min: Number(e.target.value) })}
+              style={{ background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '4px 6px', color: C.text, fontSize: '11px', fontFamily: 'inherit' }}>
+              {[15, 30, 60].map(m => <option key={m} value={m}>{m} min</option>)}
+            </select>
+          </label>
+          {alertMsg && <span style={{ fontSize: '11px', color: C.green }}>{alertMsg}</span>}
         </div>
 
         {data && (

@@ -16,6 +16,7 @@ function contractFormFrom(emp) {
     contract_type: emp.contract_type || 'Non defini',
     contract_hours: emp.contract_hours ?? 35,
     hire_date: emp.hire_date ? String(emp.hire_date).slice(0, 10) : '',
+    contract_end_date: emp.contract_end_date ? String(emp.contract_end_date).slice(0, 10) : '',
   };
 }
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
@@ -90,6 +91,7 @@ export default function DossiersRH() {
         contract_type: contractForm.contract_type,
         contract_hours: parseFloat(contractForm.contract_hours) || 35,
         hire_date: contractForm.hire_date || null,
+        contract_end_date: contractForm.contract_end_date || null,
       };
       const { data, error } = await supabase.from('employees').update(patch).eq('id', selectedEmp.id).select().single();
       if (error) throw error;
@@ -159,6 +161,24 @@ export default function DossiersRH() {
     catch { showToast('Copie impossible, selectionnez le lien manuellement', C.red); }
   }
 
+  // Suppression d'une fiche saisie par erreur (fonction delete_employee en base : refuse si pointages)
+  async function deleteEmployee(emp) {
+    const msg = 'Supprimer definitivement la fiche de ' + emp.first_name + ' ' + emp.last_name + ' ?\n\n'
+      + "Seront aussi supprimes : ses creneaux, ses reponses d'onboarding, ses documents et son compte de connexion.\n"
+      + 'Cette action est irreversible.';
+    if (!window.confirm(msg)) return;
+    try {
+      const { data: files, error } = await supabase.rpc('delete_employee', { p_employee_id: emp.id });
+      if (error) throw error;
+      if (files && files.length) await supabase.storage.from('documents-rh').remove(files);
+      setEmployees(prev => prev.filter(e => e.id !== emp.id));
+      if (selectedEmp?.id === emp.id) { setSelectedEmp(null); setContractForm(null); }
+      showToast('Fiche supprimee');
+    } catch (err) {
+      showToast('Erreur : ' + err.message, C.red);
+    }
+  }
+
   async function updateCode() {
     await supabase.from('onboarding_invitations').update({ code: code.toUpperCase() }).eq('is_active', true);
     setCodeEdit(false);
@@ -170,7 +190,10 @@ export default function DossiersRH() {
     if (data) window.open(data.signedUrl, '_blank');
   }
 
-  const filtered = employees.filter(e => {
+  // Candidat qui n'a pas termine l'onboarding : affiche a part, pas dans la liste principale
+  const isInscriptionEnCours = e => !e.is_active && !e.onboarding_completed;
+  const inscriptions = employees.filter(isInscriptionEnCours);
+  const filtered = employees.filter(e => !isInscriptionEnCours(e)).filter(e => {
     if (filter === 'pending') return e.onboarding_completed && !e.is_active;
     if (filter === 'active') return e.is_active;
     if (filter === 'incomplete') return !e.onboarding_completed;
@@ -248,6 +271,24 @@ export default function DossiersRH() {
             </div>
           )}
 
+          {/* Inscriptions en cours (onboarding non termine) */}
+          {inscriptions.length > 0 && (
+            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid ' + C.border }}>
+              <div style={{ fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '10px' }}>INSCRIPTIONS EN COURS ({inscriptions.length})</div>
+              {inscriptions.map(emp => (
+                <div key={emp.id} onClick={() => loadEmpDetails(emp)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '8px', border: '1px solid ' + (selectedEmp?.id === emp.id ? C.purple : C.border), background: selectedEmp?.id === emp.id ? C.purpleLight : 'transparent', marginBottom: '4px', cursor: 'pointer' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '11px', fontWeight: 500, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.first_name} {emp.last_name}</div>
+                    <div style={{ fontSize: '9px', color: C.muted }}>Dossier non terminé · {emp.email}</div>
+                  </div>
+                  <button title="Supprimer" onClick={e => { e.stopPropagation(); deleteEmployee(emp); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 4px' }}>🗑️</button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Section équipiers temp */}
           {tempEmployees.length > 0 && (
             <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid ' + C.border }}>
@@ -305,6 +346,10 @@ export default function DossiersRH() {
                   {accountIds.has(selectedEmp.id) && (
                     <span style={{ background: C.purpleLight, color: C.purple, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>✓ Accès application</span>
                   )}
+                  <button title="Supprimer cette fiche" onClick={() => deleteEmployee(selectedEmp)}
+                    style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '8px', padding: '10px 14px', color: C.red, fontSize: '12px', fontFamily: 'inherit', cursor: 'pointer' }}>
+                    🗑️ Supprimer
+                  </button>
                   {tempEmployees.length > 0 && (
                     <button onClick={() => setMergeModal(true)}
                       style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '66', borderRadius: '8px', padding: '10px 16px', color: C.purple, fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
@@ -385,6 +430,10 @@ export default function DossiersRH() {
                     </label>
                     <label style={{ fontSize: '11px', color: C.muted }}>DATE D'EMBAUCHE
                       <input type="date" style={{ ...inp, width: '100%', marginTop: '4px', boxSizing: 'border-box' }} value={contractForm.hire_date} onChange={e => setContractForm(f => ({ ...f, hire_date: e.target.value }))} />
+                    </label>
+                    <label style={{ fontSize: '11px', color: C.muted }}>FIN DE CONTRAT / SORTIE
+                      <input type="date" style={{ ...inp, width: '100%', marginTop: '4px', boxSizing: 'border-box' }} value={contractForm.contract_end_date} onChange={e => setContractForm(f => ({ ...f, contract_end_date: e.target.value }))} />
+                      <span style={{ display: 'block', fontSize: '10px', marginTop: '3px' }}>Vide pour un CDI en cours. Documents visibles par le salarié jusqu'à 3 mois après.</span>
                     </label>
                   </div>
                   <div style={{ marginTop: '12px', fontSize: '11px', color: C.muted }}>SERVICES SECONDAIRES (apparaît aussi dans ces plannings)</div>

@@ -4,6 +4,7 @@ import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
+import { absenceType, absenceCovers } from '../absences';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
@@ -71,6 +72,7 @@ export default function Planning() {
   const [hovered, setHovered] = useState(null);
   const [exportingPDF, setExportingPDF] = useState(false);
   const [savingShift, setSavingShift] = useState(false);
+  const [absences, setAbsences] = useState([]); // absences acceptees ou en attente sur la semaine
   const [tempForm, setTempForm] = useState({ first_name: '', last_name: '', role: '' });
   const [dragEmpIdx, setDragEmpIdx] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
@@ -92,6 +94,7 @@ export default function Planning() {
   useEffect(() => {
     loadShifts();
     loadVisibility();
+    loadAbsences();
     loadMonthlySummary();
   }, [weekOffset, service]); // eslint-disable-line
 
@@ -134,6 +137,15 @@ export default function Planning() {
     const r = await axios.get(API+'/schedules/monthly-summary?month='+currentMonth).catch(()=>({data:{}}));
     setMonthlySummary(r.data);
   }
+
+  async function loadAbsences() {
+    const { data } = await supabase.from('absence_requests').select('*')
+      .in('status', ['acceptee', 'en_attente'])
+      .lte('start_date', fmtDate(addDays(mon, 6))).gte('end_date', fmtDate(mon));
+    setAbsences(data || []);
+  }
+  const absenceFor = (empId, date) => absences.find(a => a.employee_id === empId && absenceCovers(a, date) && a.status === 'acceptee')
+    || absences.find(a => a.employee_id === empId && absenceCovers(a, date));
 
   async function loadVisibility() {
     const { data } = await supabase.from('planning_visibility').select('*').eq('service', service).eq('week_start', weekStart);
@@ -232,6 +244,11 @@ export default function Planning() {
 
   async function saveShift() {
     if (savingShift) return; // evite un double enregistrement si on reclique pendant la sauvegarde
+    if (form.shiftId !== 'repos') {
+      const dates = [form.date, ...dupDays.filter(d => d !== form.dayIdx).map(di => fmtDate(addDays(mon, di)))];
+      const conflits = dates.filter(d => absences.some(a => a.employee_id === form.empId && a.status === 'acceptee' && absenceCovers(a, d)));
+      if (conflits.length && !window.confirm(form.empName + ' est en absence acceptée le ' + conflits.map(d => d.split('-').reverse().join('/')).join(', ') + '.\nPlanifier quand même ?')) return;
+    }
     setSavingShift(true);
     try {
       const breakMins = form.breakMinutes || 0;
@@ -450,6 +467,11 @@ export default function Planning() {
                     return(
                       <div key={di} style={{padding:'3px',minHeight:'80px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:hovered===key?C.borderLight:'transparent'}}
                         onClick={()=>openModal(emp,di)} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(null)}>
+                        {(()=>{const ab=absenceFor(emp.id,date);if(!ab)return null;const t=absenceType(ab.type);const pending=ab.status==='en_attente';return(
+                          <div {...(pending?{'data-pdf-hide':true}:{})} title={pending?'Demande en attente : '+t.label:t.label}
+                            style={{borderRadius:'5px',padding:'2px 6px',marginBottom:'2px',fontSize:'10px',fontWeight:600,textAlign:'center',background:pending?'transparent':t.bg,color:t.color,border:(pending?'1px dashed ':'1px solid ')+t.color}}>
+                            {t.short}{pending?' ?':''}
+                          </div>);})()}
                         {dayShifts.length>0?(
                           <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
                             {dayShifts.map((shift,si)=>{

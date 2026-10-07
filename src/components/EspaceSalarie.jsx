@@ -4,6 +4,7 @@ import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
+import { ABSENCE_TYPES, ABSENCE_STATUS, absenceType, absencePeriod, absenceDays } from '../absences';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
 const DOC_GROUPS = [
@@ -47,6 +48,10 @@ export default function EspaceSalarie({ profile }) {
   const [modulation,setModulation]=useState(null);
   const [docs,setDocs]=useState([]);
   const [docsLoading,setDocsLoading]=useState(false);
+  const [absences,setAbsences]=useState([]);
+  const [absForm,setAbsForm]=useState({type:'conge_paye',start_date:'',end_date:'',comment:''});
+  const [absSaving,setAbsSaving]=useState(false);
+  const [absMsg,setAbsMsg]=useState(null);
   const [exportingPDF,setExportingPDF]=useState(false);
   const planningRef = useRef(null);
   const mon=getMonday(weekOffset);
@@ -71,6 +76,40 @@ export default function EspaceSalarie({ profile }) {
     supabase.from('documents').select('*').eq('employee_id',selectedEmp.id).order('created_at',{ascending:false})
       .then(({data})=>setDocs(data||[])).finally(()=>setDocsLoading(false));
   },[tab,selectedEmp]);
+
+  // Demandes d'absence du salarie
+  function loadAbsences(){
+    if(!selectedEmp)return;
+    supabase.from('absence_requests').select('*').eq('employee_id',selectedEmp.id).order('start_date',{ascending:false}).then(({data})=>setAbsences(data||[]));
+  }
+  useEffect(()=>{if(tab==='absences')loadAbsences();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab,selectedEmp]);
+
+  async function submitAbsence(){
+    setAbsMsg(null);
+    const f=absForm;
+    if(!f.start_date){setAbsMsg({err:true,text:'Indiquez la date de debut.'});return;}
+    const end=f.end_date||f.start_date;
+    if(end<f.start_date){setAbsMsg({err:true,text:'La date de fin doit etre apres la date de debut.'});return;}
+    setAbsSaving(true);
+    try{
+      const {data,error}=await supabase.from('absence_requests').insert({employee_id:selectedEmp.id,type:f.type,start_date:f.start_date,end_date:end,comment:f.comment.trim()||null}).select().single();
+      if(error)throw error;
+      axios.post(API+'/absences/notify',{request_id:data.id,event:'created'}).catch(()=>{});
+      setAbsForm({type:'conge_paye',start_date:'',end_date:'',comment:''});
+      setAbsMsg({err:false,text:'Demande envoyee : votre responsable a ete prevenu.'});
+      loadAbsences();
+    }catch(err){setAbsMsg({err:true,text:'Erreur : '+err.message});}
+    finally{setAbsSaving(false);}
+  }
+
+  async function cancelAbsence(a){
+    if(!window.confirm('Annuler cette demande ?'))return;
+    const {error}=await supabase.from('absence_requests').update({status:'annulee'}).eq('id',a.id);
+    if(error){setAbsMsg({err:true,text:'Erreur : '+error.message});return;}
+    loadAbsences();
+  }
 
   async function openDoc(doc){
     // Onglet ouvert tout de suite (sinon bloque sur mobile), puis redirige vers le lien temporaire
@@ -149,7 +188,7 @@ export default function EspaceSalarie({ profile }) {
           </div>
         )}
         <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
-          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'documents',label:'Mes documents'}].map(t=>(
+          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},{id:'documents',label:'Mes documents'}].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400}}>{t.label}</button>
           ))}
         </div>
@@ -199,6 +238,49 @@ export default function EspaceSalarie({ profile }) {
                 );
               })}
             </div>
+          </div>
+        )}
+        {tab==='absences'&&(
+          <div>
+            <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'14px'}}>DEMANDER UNE ABSENCE</div>
+            <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'18px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'10px',marginBottom:'10px'}}>
+                <label style={{fontSize:'10px',color:C.muted}}>TYPE
+                  <select style={{...inp,marginTop:'4px'}} value={absForm.type} onChange={e=>setAbsForm(f=>({...f,type:e.target.value}))}>
+                    {ABSENCE_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                </label>
+                <label style={{fontSize:'10px',color:C.muted}}>DU
+                  <input type="date" style={{...inp,marginTop:'4px'}} value={absForm.start_date} onChange={e=>setAbsForm(f=>({...f,start_date:e.target.value}))}/>
+                </label>
+                <label style={{fontSize:'10px',color:C.muted}}>AU (inclus)
+                  <input type="date" style={{...inp,marginTop:'4px'}} value={absForm.end_date} min={absForm.start_date||undefined} onChange={e=>setAbsForm(f=>({...f,end_date:e.target.value}))}/>
+                </label>
+              </div>
+              <input style={{...inp,marginBottom:'10px'}} placeholder="Commentaire (facultatif)" value={absForm.comment} onChange={e=>setAbsForm(f=>({...f,comment:e.target.value}))}/>
+              {absMsg&&<div style={{fontSize:'12px',color:absMsg.err?C.red:C.green,marginBottom:'10px'}}>{absMsg.text}</div>}
+              <button onClick={submitAbsence} disabled={absSaving} style={{background:C.purple,border:'none',borderRadius:'6px',padding:'8px 18px',color:'#fff',fontSize:'12px',fontFamily:'inherit',fontWeight:600,cursor:absSaving?'not-allowed':'pointer',opacity:absSaving?0.7:1}}>{absSaving?'Envoi...':'Envoyer la demande'}</button>
+            </div>
+
+            <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'10px'}}>MES DEMANDES</div>
+            {absences.length===0?(
+              <div style={{color:C.muted,fontSize:'12px',textAlign:'center',padding:'20px'}}>Aucune demande pour le moment.</div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                {absences.map(a=>{const t=absenceType(a.type);const st=ABSENCE_STATUS[a.status];return(
+                  <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',padding:'10px 14px',background:C.card,border:'1px solid '+C.border,borderLeft:'4px solid '+t.color,borderRadius:'8px',flexWrap:'wrap'}}>
+                    <div>
+                      <div style={{fontSize:'12px',fontWeight:500,color:C.text}}>{t.label} · {absencePeriod(a)} <span style={{color:C.muted}}>({absenceDays(a)} j)</span></div>
+                      {a.manager_comment&&<div style={{fontSize:'11px',color:C.muted,marginTop:'2px'}}>Responsable : {a.manager_comment}</div>}
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <span style={{background:st.bg,color:st.color,padding:'2px 10px',borderRadius:'10px',fontSize:'11px',fontWeight:600}}>{st.label}</span>
+                      {a.status==='en_attente'&&<button onClick={()=>cancelAbsence(a)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'4px 10px',color:C.muted,fontSize:'11px',fontFamily:'inherit',cursor:'pointer'}}>Annuler</button>}
+                    </div>
+                  </div>
+                );})}
+              </div>
+            )}
           </div>
         )}
         {tab==='documents'&&(

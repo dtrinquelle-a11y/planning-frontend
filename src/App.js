@@ -18,6 +18,7 @@ import Confidentialite from './components/Confidentialite';
 import ResetPassword from './components/ResetPassword';
 import Absences from './components/Absences';
 import ExportPaie from './components/ExportPaie';
+import Realise from './components/Realise';
 import { fetchManagerBadges, fetchEmployeeBadges, Badge } from './badges';
 
 function AppInner() {
@@ -187,6 +188,7 @@ function AppInner() {
         { id: 'planning', label: 'Planning' },
         { id: 'timeline', label: 'Timeline' },
         { id: 'absences', label: 'Absences' },
+        { id: 'realise', label: 'Réalisé' },
         { id: 'paie', label: 'Paie' },
         { id: 'salarie', label: 'Espace Salarie' },
         { id: 'qrcode', label: 'QR Codes' },
@@ -228,6 +230,7 @@ function AppInner() {
         {page === 'ged' && isManager && <GED profile={profile} />}
         {page === 'absences' && isManager && <Absences />}
         {page === 'paie' && isManager && <ExportPaie />}
+        {page === 'realise' && isManager && <Realise />}
         {page === 'dossiers' && isManager && <DossiersRH profile={profile} />}
         {page === 'parametrage' && <Parametrage />}
       </div>

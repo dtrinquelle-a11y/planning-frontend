@@ -21,11 +21,14 @@ function daysInMonth(a, du, au) {
 }
 
 const num = v => (v === null || v === undefined ? '' : String(v).replace('.', ','));
+// "2026-06-01" -> "01/06/2026"
+const frD = v => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '');
 const fmtH = v => (v === null || v === undefined ? '—' : String(v).replace('.', ',') + ' h');
 
 // Colonnes de l'export (libelle, valeur)
 const COLUMNS = [
   ['Nom', r => r.nom], ['Prenom', r => r.prenom], ['Service', r => r.service], ['Contrat', r => r.contrat],
+  ['Debut de contrat', r => frD(r.debut_contrat)], ['Fin de contrat', r => frD(r.fin_contrat)],
   ['Heures contrat / semaine', r => num(r.heures_contrat)],
   ['Heures planifiees', r => num(r.heures_planifiees)],
   ['Heures realisees (pointage)', r => num(r.heures_realisees)],
@@ -211,7 +214,10 @@ export default function ExportPaie() {
                       <div style={{ fontWeight: 500 }}>{r.prenom} {r.nom}{r.temporaire ? ' (temp)' : ''}</div>
                       <div style={{ fontSize: '10px', color: C.muted }}>{r.service}</div>
                     </td>
-                    <td style={td}>{r.contrat} · {num(r.heures_contrat)} h</td>
+                    <td style={td}>
+                      <div>{r.contrat} · {num(r.heures_contrat)} h</div>
+                      {(r.debut_contrat || r.fin_contrat) && <div style={{ fontSize: '10px', color: C.muted }}>{r.debut_contrat ? 'du ' + frD(r.debut_contrat) : ''}{r.fin_contrat ? ' au ' + frD(r.fin_contrat) : (r.debut_contrat ? ' · en cours' : '')}</div>}
+                    </td>
                     <td style={td}>{fmtH(r.heures_planifiees)}</td>
                     <td style={td}>{fmtH(r.heures_realisees)}</td>
                     <td style={{ ...td, color: r.heures_au_dela_contrat > 0 ? C.amber : C.text }} title={r.semaines.map(w => 'Semaine du ' + w.monday.split('-').reverse().join('/') + ' : ' + num(w.heures) + ' h').join('\n')}>{fmtH(r.heures_au_dela_contrat)}</td>

@@ -21,6 +21,9 @@ export default function DossiersRH() {
   const [selectedTempId, setSelectedTempId] = useState('');
   const [merging, setMerging] = useState(false);
   const [toast, setToast] = useState('');
+  const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
+  const [accessLink, setAccessLink] = useState(null); // { empId, url }
+  const [creatingLink, setCreatingLink] = useState(false);
   const toastTimer = React.useRef(null);
 
   useEffect(() => { loadAll(); }, []);
@@ -33,12 +36,14 @@ export default function DossiersRH() {
 
   async function loadAll() {
     setLoading(true);
-    const [empRes, codeRes, tempRes] = await Promise.all([
+    const [empRes, codeRes, tempRes, profRes] = await Promise.all([
       supabase.from('employees').select('*').eq('is_temp', false).order('last_name'),
       supabase.from('onboarding_invitations').select('*').eq('is_active', true).limit(1),
       supabase.from('employees').select('*').eq('is_temp', true).order('first_name'),
+      supabase.from('user_profiles').select('employee_id').not('employee_id', 'is', null),
     ]);
     setEmployees(empRes.data || []);
+    setAccountIds(new Set((profRes.data || []).map(p => p.employee_id)));
     setTempEmployees(tempRes.data || []);
     if (codeRes.data?.[0]) setCode(codeRes.data[0].code);
     setLoading(false);
@@ -93,6 +98,23 @@ export default function DossiersRH() {
     } catch (err) {
       showToast('Erreur : ' + err.message, C.red);
     } finally { setMerging(false); }
+  }
+
+  // Lien personnel de premier acces (7 jours, usage unique) pour un salarie existant sans compte
+  async function createAccessLink(emp) {
+    setCreatingLink(true);
+    try {
+      const { data: token, error } = await supabase.rpc('create_access_link', { p_employee_id: emp.id });
+      if (error) throw error;
+      setAccessLink({ empId: emp.id, url: window.location.origin + '/onboarding?acces=' + token });
+    } catch (err) {
+      showToast('Erreur : ' + err.message, C.red);
+    } finally { setCreatingLink(false); }
+  }
+
+  async function copyAccessLink() {
+    try { await navigator.clipboard.writeText(accessLink.url); showToast('Lien copie !'); }
+    catch { showToast('Copie impossible, selectionnez le lien manuellement', C.red); }
   }
 
   async function updateCode() {
@@ -177,6 +199,7 @@ export default function DossiersRH() {
                     {emp.onboarding_completed && !emp.is_active && <span style={{ fontSize: '9px', background: '#FEF3C7', color: '#D97706', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>A VALIDER</span>}
                     {emp.is_active && <span style={{ fontSize: '9px', background: '#DCFCE7', color: '#16A34A', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>ACTIF</span>}
                     {!emp.onboarding_completed && <span style={{ fontSize: '9px', background: '#F3F4F6', color: '#6B7280', padding: '2px 6px', borderRadius: '10px' }}>INCOMPLET</span>}
+                    {!accountIds.has(emp.id) && <span style={{ display: 'block', marginTop: '3px', fontSize: '9px', background: '#FEF2F2', color: '#DC2626', padding: '2px 6px', borderRadius: '10px', textAlign: 'center' }}>SANS ACCÈS</span>}
                   </div>
                 </div>
               ))}
@@ -231,6 +254,15 @@ export default function DossiersRH() {
                   {selectedEmp.is_active && (
                     <span style={{ background: '#DCFCE7', color: '#16A34A', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>✓ Compte actif</span>
                   )}
+                  {!accountIds.has(selectedEmp.id) && (
+                    <button onClick={() => createAccessLink(selectedEmp)} disabled={creatingLink}
+                      style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 16px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: creatingLink ? 'not-allowed' : 'pointer', opacity: creatingLink ? 0.7 : 1 }}>
+                      {creatingLink ? '...' : "🔗 Créer un lien d'accès"}
+                    </button>
+                  )}
+                  {accountIds.has(selectedEmp.id) && (
+                    <span style={{ background: C.purpleLight, color: C.purple, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>✓ Accès application</span>
+                  )}
                   {tempEmployees.length > 0 && (
                     <button onClick={() => setMergeModal(true)}
                       style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '66', borderRadius: '8px', padding: '10px 16px', color: C.purple, fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
@@ -239,6 +271,23 @@ export default function DossiersRH() {
                   )}
                 </div>
               </div>
+
+              {/* Lien de premier acces genere */}
+              {accessLink && accessLink.empId === selectedEmp.id && (
+                <div style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '66', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>🔗 Lien d'accès pour {selectedEmp.first_name}</div>
+                  <div style={{ fontSize: '12px', color: C.muted, marginBottom: '10px' }}>
+                    Envoyez ce lien au salarié (SMS, WhatsApp, email). Valable 7 jours, utilisable une seule fois. Générer un nouveau lien annule le précédent.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input readOnly value={accessLink.url} onFocus={e => e.target.select()} style={{ ...inp, flex: 1, minWidth: '240px' }} />
+                    <button onClick={copyAccessLink}
+                      style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '8px 16px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
+                      Copier
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Modal fusion */}
               {mergeModal && (

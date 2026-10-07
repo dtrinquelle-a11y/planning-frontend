@@ -23,8 +23,12 @@ const C = {
 const inp = { width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px 12px', color: C.text, fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box' };
 const lbl = { display: 'block', fontSize: '11px', color: C.muted, letterSpacing: '0.06em', marginBottom: '5px', fontWeight: 500 };
 
+// Lien de premier acces (?acces=...) : rattache le compte a une fiche salarie existante
+const ACCESS_TOKEN = new URLSearchParams(window.location.search).get('acces');
+
 export default function Onboarding() {
-  const [step, setStep] = useState('code');
+  const [step, setStep] = useState(ACCESS_TOKEN ? 'checking' : 'code');
+  const [accessName, setAccessName] = useState('');
   const [fields, setFields] = useState([]);
   const [code, setCode] = useState('');
   const [identity, setIdentity] = useState({ email: '', first_name: '', last_name: '', password: '' });
@@ -36,6 +40,15 @@ export default function Onboarding() {
   const [privacyAck, setPrivacyAck] = useState(false);
 
   useEffect(() => {
+    if (ACCESS_TOKEN) {
+      withTimeout(supabase.rpc('check_access_link', { p_token: ACCESS_TOKEN }))
+        .then(({ data }) => {
+          if (data?.valid) { setAccessName(data.first_name || ''); setStep('identity'); }
+          else setStep('invalid');
+        })
+        .catch(() => setStep('invalid'));
+      return;
+    }
     supabase.from('onboarding_fields').select('*').eq('is_active', true).order('sort_order').then(({ data }) => {
       if (data) setFields(data);
     });
@@ -56,7 +69,7 @@ export default function Onboarding() {
   async function createAccount() {
     setError(''); setLoading(true);
     try {
-      if (!identity.email || !identity.first_name || !identity.last_name || !identity.password) {
+      if (!identity.email || !identity.password || (!ACCESS_TOKEN && (!identity.first_name || !identity.last_name))) {
         setError('Tous les champs sont obligatoires.'); return;
       }
       if (identity.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caracteres.'); return; }
@@ -76,6 +89,14 @@ export default function Onboarding() {
       // Sans session (confirmation email active), l'envoi des pieces justificatives echouerait
       if (!authData.session) {
         setError('Compte cree, mais une confirmation par email est requise. Contactez votre responsable.'); return;
+      }
+
+      // Salarie existant : on rattache le compte a sa fiche grace au lien, sans dossier d'embauche
+      if (ACCESS_TOKEN) {
+        const { error: claimError } = await withTimeout(supabase.rpc('claim_access_link', { p_token: ACCESS_TOKEN }));
+        if (claimError) throw claimError;
+        setStep('access_done');
+        return;
       }
 
       // Vérifier si l'email existe déjà dans employees
@@ -173,10 +194,34 @@ export default function Onboarding() {
           <div style={{ fontSize: '20px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>
             <span style={{ color: C.purple }}>▸</span> PLANNING HPA
           </div>
-          <div style={{ fontSize: '12px', color: C.muted }}>Le Bout du Monde · Dossier d'embauche</div>
+          <div style={{ fontSize: '12px', color: C.muted }}>Le Bout du Monde · {ACCESS_TOKEN ? 'Premier accès' : "Dossier d'embauche"}</div>
         </div>
 
-        {step !== 'done' && (
+        {ACCESS_TOKEN && step === 'checking' && (
+          <div style={{ textAlign: 'center', color: C.muted, fontSize: '13px', padding: '40px' }}>Verification du lien...</div>
+        )}
+
+        {ACCESS_TOKEN && step === 'invalid' && (
+          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '28px', textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+            <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '10px', color: C.text }}>Lien invalide ou expiré</div>
+            <div style={{ fontSize: '13px', color: C.muted, lineHeight: 1.6 }}>
+              Ce lien d'accès n'est plus valable (déjà utilisé ou expiré).<br />Demandez un nouveau lien à votre responsable.
+            </div>
+          </div>
+        )}
+
+        {ACCESS_TOKEN && step === 'access_done' && (
+          <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '40px', textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎉</div>
+            <div style={{ fontSize: '18px', fontWeight: 600, color: C.text, marginBottom: '10px' }}>Votre accès est créé !</div>
+            <div style={{ fontSize: '13px', color: C.muted, lineHeight: 1.7, marginBottom: '24px' }}>
+              Vous pouvez maintenant vous connecter avec votre email et votre mot de passe<br />pour consulter votre planning et pointer.
+            </div>
+            <a href="/" style={{ display: 'inline-block', background: C.purple, borderRadius: '8px', padding: '12px 24px', color: '#fff', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Se connecter →</a>
+          </div>
+        )}
+
+        {!ACCESS_TOKEN && step !== 'done' && (
           <div style={{ display: 'flex', gap: '4px', marginBottom: '24px' }}>
             {['code', 'identity', 'form'].map((s, i) => (
               <div key={s} style={{ flex: 1, height: '4px', borderRadius: '2px', background: ['code','identity','form'].indexOf(step) >= i ? C.purple : C.border, transition: 'background .3s' }} />
@@ -205,21 +250,23 @@ export default function Onboarding() {
 
         {step === 'identity' && (
           <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '28px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-            <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Vos informations</div>
-            <div style={{ fontSize: '13px', color: C.muted, marginBottom: '24px' }}>Creez votre espace personnel.</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              <div><label style={lbl}>PRENOM *</label><input style={inp} value={identity.first_name} onChange={e => setIdentity(i => ({ ...i, first_name: e.target.value }))} placeholder="Jean" /></div>
-              <div><label style={lbl}>NOM *</label><input style={inp} value={identity.last_name} onChange={e => setIdentity(i => ({ ...i, last_name: e.target.value }))} placeholder="Dupont" /></div>
-            </div>
+            <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>{ACCESS_TOKEN ? 'Bonjour ' + accessName + ' !' : 'Vos informations'}</div>
+            <div style={{ fontSize: '13px', color: C.muted, marginBottom: '24px' }}>{ACCESS_TOKEN ? 'Choisissez votre email et votre mot de passe pour accéder à votre planning.' : 'Creez votre espace personnel.'}</div>
+            {!ACCESS_TOKEN && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div><label style={lbl}>PRENOM *</label><input style={inp} value={identity.first_name} onChange={e => setIdentity(i => ({ ...i, first_name: e.target.value }))} placeholder="Jean" /></div>
+                <div><label style={lbl}>NOM *</label><input style={inp} value={identity.last_name} onChange={e => setIdentity(i => ({ ...i, last_name: e.target.value }))} placeholder="Dupont" /></div>
+              </div>
+            )}
             <div style={{ marginBottom: '12px' }}><label style={lbl}>EMAIL *</label><input type="email" style={inp} value={identity.email} onChange={e => setIdentity(i => ({ ...i, email: e.target.value }))} placeholder="jean.dupont@email.com" /></div>
             <div style={{ marginBottom: '16px' }}><label style={lbl}>MOT DE PASSE * (min. 6 caracteres)</label><input type="password" style={inp} value={identity.password} onChange={e => setIdentity(i => ({ ...i, password: e.target.value }))} placeholder="••••••••" /></div>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '20px', fontSize: '12px', color: C.muted, lineHeight: 1.5, cursor: 'pointer' }}>
               <input type="checkbox" checked={privacyAck} onChange={e => setPrivacyAck(e.target.checked)} style={{ marginTop: '2px', cursor: 'pointer' }} />
-              <span>J'ai pris connaissance de la <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ color: C.purple }}>politique de confidentialité</a> et du traitement de mes données pour mon dossier d'embauche. *</span>
+              <span>J'ai pris connaissance de la <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ color: C.purple }}>politique de confidentialité</a> et du traitement de mes données{ACCESS_TOKEN ? '' : " pour mon dossier d'embauche"}. *</span>
             </label>
             {error && <div style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: C.red, marginBottom: '14px' }}>{error}</div>}
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => setStep('code')} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>← Retour</button>
+              {!ACCESS_TOKEN && <button onClick={() => setStep('code')} style={{ flex: 1, background: 'none', border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>← Retour</button>}
               <button onClick={createAccount} disabled={loading} style={{ flex: 2, background: C.purple, border: 'none', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
                 {loading ? 'Creation...' : 'Creer mon compte →'}
               </button>

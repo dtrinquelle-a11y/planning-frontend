@@ -33,3 +33,17 @@ export function absenceDays(a) {
 
 // L'absence couvre-t-elle cette date (AAAA-MM-JJ) ?
 export const absenceCovers = (a, date) => String(a.start_date).slice(0, 10) <= date && date <= String(a.end_date).slice(0, 10);
+
+// Dates changees par le manager par rapport a la demande du salarie
+export const isModified = a => !!a.original_start_date
+  && (String(a.original_start_date).slice(0, 10) !== String(a.start_date).slice(0, 10)
+   || String(a.original_end_date).slice(0, 10) !== String(a.end_date).slice(0, 10));
+
+// Libelle et couleurs du statut ("Acceptee avec modification" si les dates ont ete changees)
+export function statusInfo(a) {
+  if (a.status === 'acceptee' && isModified(a)) return { label: 'Acceptée avec modification', color: '#B45309', bg: '#FFFBEB' };
+  return ABSENCE_STATUS[a.status];
+}
+
+// "Du ... au ..." des dates initialement demandees par le salarie
+export const requestedPeriod = a => absencePeriod({ start_date: a.original_start_date, end_date: a.original_end_date });

@@ -4,7 +4,7 @@ import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
-import { ABSENCE_TYPES, ABSENCE_STATUS, absenceType, absencePeriod, absenceDays, absenceCovers } from '../absences';
+import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod } from '../absences';
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
@@ -290,10 +290,11 @@ export default function EspaceSalarie({ profile }) {
               <div style={{color:C.muted,fontSize:'12px',textAlign:'center',padding:'20px'}}>Aucune demande pour le moment.</div>
             ):(
               <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-                {absences.map(a=>{const t=absenceType(a.type);const st=ABSENCE_STATUS[a.status];return(
+                {absences.map(a=>{const t=absenceType(a.type);const st=statusInfo(a);return(
                   <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',padding:'10px 14px',background:C.card,border:'1px solid '+C.border,borderLeft:'4px solid '+t.color,borderRadius:'8px',flexWrap:'wrap'}}>
                     <div>
                       <div style={{fontSize:'12px',fontWeight:500,color:C.text}}>{t.label} · {absencePeriod(a)} <span style={{color:C.muted}}>({absenceDays(a)} j)</span></div>
+                      {isModified(a)&&<div style={{fontSize:'11px',color:C.amber,marginTop:'2px'}}>Vous aviez demandé : {requestedPeriod(a).toLowerCase()}</div>}
                       {a.manager_comment&&<div style={{fontSize:'11px',color:C.muted,marginTop:'2px'}}>Responsable : {a.manager_comment}</div>}
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:'8px'}}>

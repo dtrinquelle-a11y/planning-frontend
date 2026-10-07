@@ -48,9 +48,10 @@ export default function EspaceSalarie({ profile }) {
   },[selectedEmp,weekOffset]);
   useEffect(()=>{if(!selectedEmp)return;axios.get(API+'/timeclock/modulation/'+selectedEmp.id).then(r=>setModulation(r.data)).catch(()=>{});},[selectedEmp]);
 
-  function getShiftForDay(dayIdx){const date=fmtDate(addDays(mon,dayIdx));return shifts.find(s=>s.work_date&&s.work_date.slice(0,10)===date);}
-  function getNextShift(){const today=new Date();today.setHours(0,0,0,0);for(let i=0;i<14;i++){const d=addDays(today,i);const date=fmtDate(d);const found=shifts.find(s=>s.work_date&&s.work_date.slice(0,10)===date&&s.shift_type!=='repos');if(found)return{shift:found,date:d,daysAway:i};}return null;}
-  function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time||s.shift_type==='repos')return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);return t+(eh*60+em-sh*60-sm)/60;},0);}
+  function getShiftsForDay(dayIdx){const date=fmtDate(addDays(mon,dayIdx));return shifts.filter(s=>s.work_date&&s.work_date.slice(0,10)===date).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''));}
+  function getNextShift(){const today=new Date();today.setHours(0,0,0,0);for(let i=0;i<14;i++){const d=addDays(today,i);const date=fmtDate(d);const found=shifts.filter(s=>s.work_date&&s.work_date.slice(0,10)===date&&s.shift_type!=='repos').sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))[0];if(found)return{shift:found,date:d,daysAway:i};}return null;}
+  // Heures nettes de la semaine : pauses deduites, creneau apres minuit gere (meme calcul que le planning manager)
+  function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time||s.shift_type==='repos')return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);let mins=eh*60+em-sh*60-sm;if(mins<0)mins+=24*60;return t+Math.max(0,mins-parseInt(s.break_minutes||0))/60;},0);}
 
   async function exportPDF() {
     if (!planningRef.current) return;
@@ -140,19 +141,24 @@ export default function EspaceSalarie({ profile }) {
 
             <div ref={planningRef} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               {DAYS.map((d,di)=>{
-                const day=addDays(mon,di);const shift=getShiftForDay(di);const shDef=shift?SHIFTS.find(s=>s.id===shift.shift_type):null;const isToday=fmtDate(day)===fmtDate(new Date());
+                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());
                 return(
                   <div key={di} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 14px',background:isToday?C.purpleLight:C.card,border:'1px solid '+(isToday?C.purple+'44':C.border),borderRadius:'8px',boxShadow:C.shadow+' 0 1px 4px'}}>
                     <div style={{minWidth:'70px'}}>
                       <div style={{fontSize:'11px',color:isToday?C.purple:C.muted}}>{d}</div>
                       <div style={{fontSize:'16px',fontWeight:600,color:isToday?C.purple:C.text}}>{day.getDate()}</div>
                     </div>
-                    {shift&&shDef?(
-                      <div style={{flex:1}}>
-                        <div style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,fontSize:'11px',fontWeight:500,marginBottom:'3px'}}>{shDef.label}</div>
-                        {shift.shift_type !== 'repos' && <div style={{fontSize:'12px',color:C.text}}>{shift.start_time?.slice(0,5)} – {shift.end_time?.slice(0,5)}</div>}
-                        {shift.note&&<div style={{fontSize:'11px',color:C.muted,fontStyle:'italic',marginTop:'2px'}}>{shift.note}</div>}
-                        {shift.is_published&&<div style={{fontSize:'10px',color:C.green,marginTop:'2px'}}>Publie</div>}
+                    {dayShifts.length>0?(
+                      // Un jour peut avoir plusieurs creneaux (service coupe / double shift)
+                      <div style={{flex:1,display:'flex',gap:'18px',flexWrap:'wrap'}}>
+                        {dayShifts.map(shift=>{const shDef=SHIFTS.find(s=>s.id===shift.shift_type)||SHIFTS[4];return(
+                          <div key={shift.id}>
+                            <div style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,fontSize:'11px',fontWeight:500,marginBottom:'3px'}}>{shDef.label}</div>
+                            {shift.shift_type !== 'repos' && <div style={{fontSize:'12px',color:C.text}}>{shift.start_time?.slice(0,5)} – {shift.end_time?.slice(0,5)}</div>}
+                            {shift.note&&<div style={{fontSize:'11px',color:C.muted,fontStyle:'italic',marginTop:'2px'}}>{shift.note}</div>}
+                            {shift.is_published&&<div style={{fontSize:'10px',color:C.green,marginTop:'2px'}}>Publie</div>}
+                          </div>
+                        );})}
                       </div>
                     ):(
                       <div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>

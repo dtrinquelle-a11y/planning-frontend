@@ -97,7 +97,7 @@ export default function GED({ isManager }) {
             {selectedEmp&&<div style={{fontSize:'12px',color:C.muted,marginBottom:'14px',padding:'8px 10px',background:C.bg,borderRadius:'6px',border:'1px solid '+C.border}}>Pour : {selectedEmp.first_name} {selectedEmp.last_name}</div>}
             <div style={{marginBottom:'10px'}}><label style={lbl}>TYPE</label><select style={inp} value={uploadForm.type} onChange={e=>setUploadForm(f=>({...f,type:e.target.value}))}>{DOC_TYPES.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}</select></div>
             <div style={{marginBottom:'10px'}}><label style={lbl}>TITRE</label><input style={inp} placeholder="Ex: Bulletin mai 2026" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/></div>
-            <div style={{marginBottom:'10px'}}><label style={lbl}>PERIODE</label><input style={inp} placeholder="Ex: 2026-05" value={uploadForm.periode} onChange={e=>setUploadForm(f=>({...f,periode:e.target.value}))}/></div>
+            <div style={{marginBottom:'10px'}}><label style={lbl}>PERIODE</label><input type="month" style={inp} value={uploadForm.periode} onChange={e=>setUploadForm(f=>({...f,periode:e.target.value}))}/></div>
             <div style={{marginBottom:'16px'}}><label style={lbl}>FICHIER</label>
               <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e=>setUploadForm(f=>({...f,file:e.target.files[0]}))} style={{...inp,padding:'6px'}}/>
               {uploadForm.file&&<div style={{fontSize:'11px',color:C.green,marginTop:'4px'}}>{uploadForm.file.name} ({formatSize(uploadForm.file.size)})</div>}

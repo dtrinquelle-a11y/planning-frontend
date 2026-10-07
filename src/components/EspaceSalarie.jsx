@@ -3,6 +3,20 @@ import axios from 'axios';
 import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import supabase from '../supabase';
+
+// Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
+const DOC_GROUPS = [
+  { id: 'bulletin_paie', label: 'Bulletins de paie', icon: '💰' },
+  { id: 'contrat', label: 'Contrats', icon: '📄' },
+  { id: 'avenant', label: 'Avenants', icon: '📝' },
+  { id: 'attestation', label: 'Attestations', icon: '✅' },
+  { id: 'certificat', label: 'Certificats', icon: '🏅' },
+  { id: 'autre', label: "Dossier d'embauche et autres", icon: '📎' },
+];
+const MOIS = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
+// "2026-05" -> "Mai 2026" (sinon texte tel quel)
+function formatPeriode(p){const m=/^(\d{4})-(\d{2})$/.exec(p||'');return m?MOIS[parseInt(m[2],10)-1]+' '+m[1]:(p||'');}
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const SHIFTS = [
@@ -31,6 +45,8 @@ export default function EspaceSalarie({ profile }) {
   const [weekOffset,setWeekOffset]=useState(0);
   const [shifts,setShifts]=useState([]);
   const [modulation,setModulation]=useState(null);
+  const [docs,setDocs]=useState([]);
+  const [docsLoading,setDocsLoading]=useState(false);
   const [exportingPDF,setExportingPDF]=useState(false);
   const planningRef = useRef(null);
   const mon=getMonday(weekOffset);
@@ -47,6 +63,22 @@ export default function EspaceSalarie({ profile }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[selectedEmp,weekOffset]);
   useEffect(()=>{if(!selectedEmp)return;axios.get(API+'/timeclock/modulation/'+selectedEmp.id).then(r=>setModulation(r.data)).catch(()=>{});},[selectedEmp]);
+
+  // Documents du salarie (la base limite l'acces a 3 mois apres la fin du contrat)
+  useEffect(()=>{
+    if(tab!=='documents'||!selectedEmp)return;
+    setDocsLoading(true);
+    supabase.from('documents').select('*').eq('employee_id',selectedEmp.id).order('created_at',{ascending:false})
+      .then(({data})=>setDocs(data||[])).finally(()=>setDocsLoading(false));
+  },[tab,selectedEmp]);
+
+  async function openDoc(doc){
+    // Onglet ouvert tout de suite (sinon bloque sur mobile), puis redirige vers le lien temporaire
+    const w=window.open('','_blank');
+    const {data,error}=await supabase.storage.from('documents-rh').createSignedUrl(doc.file_path,60);
+    if(error||!data){if(w)w.close();alert('Document indisponible.');return;}
+    if(w)w.location.href=data.signedUrl;else window.location.href=data.signedUrl;
+  }
 
   function getShiftsForDay(dayIdx){const date=fmtDate(addDays(mon,dayIdx));return shifts.filter(s=>s.work_date&&s.work_date.slice(0,10)===date).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''));}
   function getNextShift(){const today=new Date();today.setHours(0,0,0,0);for(let i=0;i<14;i++){const d=addDays(today,i);const date=fmtDate(d);const found=shifts.filter(s=>s.work_date&&s.work_date.slice(0,10)===date&&s.shift_type!=='repos').sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))[0];if(found)return{shift:found,date:d,daysAway:i};}return null;}
@@ -117,7 +149,7 @@ export default function EspaceSalarie({ profile }) {
           </div>
         )}
         <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
-          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'}].map(t=>(
+          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'documents',label:'Mes documents'}].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400}}>{t.label}</button>
           ))}
         </div>
@@ -167,6 +199,39 @@ export default function EspaceSalarie({ profile }) {
                 );
               })}
             </div>
+          </div>
+        )}
+        {tab==='documents'&&(
+          <div>
+            <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'14px'}}>MES DOCUMENTS</div>
+            {docsLoading?(
+              <div style={{color:C.muted,fontSize:'12px',textAlign:'center',padding:'30px'}}>Chargement...</div>
+            ):docs.length===0?(
+              <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'24px',textAlign:'center',color:C.muted,fontSize:'12px',lineHeight:1.6}}>
+                Aucun document disponible pour le moment.<br/>Vos bulletins de paie et documents RH apparaitront ici.
+                {selectedEmp?.contract_end_date&&<><br/><span style={{fontSize:'11px'}}>Les documents restent consultables jusqu'a 3 mois apres la fin du contrat.</span></>}
+              </div>
+            ):DOC_GROUPS.map(g=>{
+              const list=docs.filter(d=>(DOC_GROUPS.some(x=>x.id===d.type)?d.type:'autre')===g.id)
+                .sort((a,b)=>(b.periode||'').localeCompare(a.periode||'')||new Date(b.created_at)-new Date(a.created_at));
+              if(!list.length)return null;
+              return(
+                <div key={g.id} style={{marginBottom:'16px'}}>
+                  <div style={{fontSize:'12px',fontWeight:600,color:C.text,marginBottom:'8px'}}>{g.icon} {g.label} ({list.length})</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {list.map(doc=>(
+                      <div key={doc.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',padding:'10px 14px',background:C.card,border:'1px solid '+C.border,borderRadius:'8px'}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:'12px',color:C.text,fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{doc.periode?formatPeriode(doc.periode):(doc.title||doc.file_name)}</div>
+                          <div style={{fontSize:'10px',color:C.muted}}>{doc.periode&&doc.title?doc.title+' · ':''}Depose le {new Date(doc.created_at).toLocaleDateString('fr-FR')}</div>
+                        </div>
+                        <button onClick={()=>openDoc(doc)} style={{background:C.purpleLight,border:'1px solid '+C.purple+'44',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',whiteSpace:'nowrap'}}>Ouvrir</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
         {tab==='heures'&&(

@@ -54,10 +54,10 @@ export default function EspaceSalarie({ profile }) {
   const [absSaving,setAbsSaving]=useState(false);
   const [absMsg,setAbsMsg]=useState(null);
   const [tabBadges,setTabBadges]=useState({});
-  const [weekAbsences,setWeekAbsences]=useState([]); // absences acceptees de la semaine affichee
+  const [weekAbsences,setWeekAbsences]=useState([]); // absences acceptees ou en attente de la semaine affichee
   useEffect(()=>{
     if(!selectedEmp)return;
-    supabase.from('absence_requests').select('*').eq('employee_id',selectedEmp.id).eq('status','acceptee')
+    supabase.from('absence_requests').select('*').eq('employee_id',selectedEmp.id).in('status',['acceptee','en_attente'])
       .lte('start_date',fmtDate(addDays(mon,6))).gte('end_date',fmtDate(mon))
       .then(({data})=>setWeekAbsences(data||[]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,15 +235,20 @@ export default function EspaceSalarie({ profile }) {
 
             <div ref={planningRef} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               {DAYS.map((d,di)=>{
-                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());const dayAbs=weekAbsences.find(a=>absenceCovers(a,fmtDate(day)));const absT=dayAbs?absenceType(dayAbs.type):null;
+                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());const dayAbs=weekAbsences.filter(a=>absenceCovers(a,fmtDate(day))).sort((x,y)=>(x.status==='acceptee'?0:1)-(y.status==='acceptee'?0:1));
                 return(
                   <div key={di} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 14px',background:isToday?C.purpleLight:C.card,border:'1px solid '+(isToday?C.purple+'44':C.border),borderRadius:'8px',boxShadow:C.shadow+' 0 1px 4px'}}>
                     <div style={{minWidth:'70px'}}>
                       <div style={{fontSize:'11px',color:isToday?C.purple:C.muted}}>{d}</div>
                       <div style={{fontSize:'16px',fontWeight:600,color:isToday?C.purple:C.text}}>{day.getDate()}</div>
                     </div>
-                    {dayAbs&&(
-                      <div style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',background:absT.bg,border:'1px solid '+absT.color,color:absT.color,fontSize:'11px',fontWeight:600}}>{absT.label}</div>
+                    {dayAbs.length>0&&(
+                      // Toutes les absences du jour (une demande en attente est en pointilles)
+                      <div style={{display:'flex',flexDirection:'column',gap:'3px'}}>
+                        {dayAbs.map(ab=>{const t=absenceType(ab.type);const pending=ab.status==='en_attente';return(
+                          <div key={ab.id} style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',background:pending?'transparent':t.bg,border:(pending?'1px dashed ':'1px solid ')+t.color,color:t.color,fontSize:'11px',fontWeight:600}}>{t.label}{pending?' (en attente)':''}</div>
+                        );})}
+                      </div>
                     )}
                     {dayShifts.length>0?(
                       // Un jour peut avoir plusieurs creneaux (service coupe / double shift)
@@ -258,7 +263,7 @@ export default function EspaceSalarie({ profile }) {
                         );})}
                       </div>
                     ):(
-                      dayAbs?<div style={{flex:1}}/>:<div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>
+                      dayAbs.length>0?<div style={{flex:1}}/>:<div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>
                     )}
                   </div>
                 );

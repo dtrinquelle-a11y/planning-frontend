@@ -15,6 +15,7 @@ import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
 import Confidentialite from './components/Confidentialite';
+import ResetPassword from './components/ResetPassword';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -25,11 +26,12 @@ function AppInner() {
   const [page, setPage] = useState(null);
   const isOnboarding = window.location.pathname === '/onboarding';
   const isConfidentialite = window.location.pathname === '/confidentialite';
+  const isReset = window.location.pathname === '/reinitialiser';
   const authRequestId = useRef(0);
   const justLoggedInRef = useRef(false);
 
   useEffect(() => {
-    if (isOnboarding || isConfidentialite) { setLoading(false); return; }
+    if (isOnboarding || isConfidentialite || isReset) { setLoading(false); return; }
 
     // Strategie simplifiee: utiliser UNIQUEMENT onAuthStateChange.
     // L'evenement INITIAL_SESSION est fiable et arrive toujours en premier.
@@ -141,6 +143,7 @@ function AppInner() {
 
   if (isOnboarding) return <Onboarding />;
   if (isConfidentialite) return <Confidentialite />;
+  if (isReset) return <ResetPassword />;
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", gap: '16px' }}>

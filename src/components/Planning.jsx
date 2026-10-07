@@ -70,6 +70,7 @@ export default function Planning() {
   const [toast, setToast] = useState('');
   const [hovered, setHovered] = useState(null);
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [savingShift, setSavingShift] = useState(false);
   const [tempForm, setTempForm] = useState({ first_name: '', last_name: '', role: '' });
   const [dragEmpIdx, setDragEmpIdx] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
@@ -230,6 +231,8 @@ export default function Planning() {
     (form.start !== defaultShift.start || form.end !== defaultShift.end);
 
   async function saveShift() {
+    if (savingShift) return; // evite un double enregistrement si on reclique pendant la sauvegarde
+    setSavingShift(true);
     try {
       const breakMins = form.breakMinutes || 0;
       const newShiftsMap = { ...shiftsMap };
@@ -265,6 +268,7 @@ export default function Planning() {
       loadMonthlySummary();
       showToast('Enregistre'+(dupDays.filter(d=>d!==form.dayIdx).length>0?' + '+dupDays.filter(d=>d!==form.dayIdx).length+' copie(s)':''));
     } catch(err) { showToast('Erreur : '+(err.response?.data?.error||err.message)); }
+    finally { setSavingShift(false); }
   }
 
   async function deleteShift(e, shiftId, empId, date) {
@@ -580,7 +584,7 @@ export default function Planning() {
 
             <div style={{display:'flex',gap:'8px'}}>
               <button onClick={()=>setModal(null)} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>
-              <button onClick={saveShift} style={{flex:1,background:C.purple,border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>Enregistrer</button>
+              <button onClick={saveShift} disabled={savingShift} style={{flex:1,background:C.purple,border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:savingShift?'not-allowed':'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600,opacity:savingShift?0.7:1}}>{savingShift?'Enregistrement...':'Enregistrer'}</button>
             </div>
           </div>
         </div>

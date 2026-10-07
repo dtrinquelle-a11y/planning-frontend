@@ -4,7 +4,7 @@ import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
-import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod } from '../absences';
+import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod, overlaps, isActive } from '../absences';
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
@@ -112,6 +112,9 @@ export default function EspaceSalarie({ profile }) {
     if(!f.start_date){setAbsMsg({err:true,text:'Indiquez la date de debut.'});return;}
     const end=f.end_date||f.start_date;
     if(end<f.start_date){setAbsMsg({err:true,text:'La date de fin doit etre apres la date de debut.'});return;}
+    // Chevauchement avec une demande deja en cours ou acceptee
+    const clash=absences.filter(a=>isActive(a)&&overlaps(a,{start_date:f.start_date,end_date:end}));
+    if(clash.length&&!window.confirm('Cette periode chevauche deja :\n'+clash.map(a=>'- '+absenceType(a.type).label+' '+absencePeriod(a).toLowerCase()+' ('+statusInfo(a).label.toLowerCase()+')').join('\n')+'\n\nEnvoyer quand meme la demande ?'))return;
     setAbsSaving(true);
     try{
       const {data,error}=await supabase.from('absence_requests').insert({employee_id:selectedEmp.id,type:f.type,start_date:f.start_date,end_date:end,comment:f.comment.trim()||null}).select().single();

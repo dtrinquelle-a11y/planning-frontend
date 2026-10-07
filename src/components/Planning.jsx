@@ -144,8 +144,9 @@ export default function Planning() {
       .lte('start_date', fmtDate(addDays(mon, 6))).gte('end_date', fmtDate(mon));
     setAbsences(data || []);
   }
-  const absenceFor = (empId, date) => absences.find(a => a.employee_id === empId && absenceCovers(a, date) && a.status === 'acceptee')
-    || absences.find(a => a.employee_id === empId && absenceCovers(a, date));
+  // Toutes les absences du salarie ce jour-la (acceptees d'abord)
+  const absencesFor = (empId, date) => absences.filter(a => a.employee_id === empId && absenceCovers(a, date))
+    .sort((x, y) => (x.status === 'acceptee' ? 0 : 1) - (y.status === 'acceptee' ? 0 : 1));
 
   async function loadVisibility() {
     const { data } = await supabase.from('planning_visibility').select('*').eq('service', service).eq('week_start', weekStart);
@@ -467,11 +468,11 @@ export default function Planning() {
                     return(
                       <div key={di} style={{padding:'3px',minHeight:'80px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:hovered===key?C.borderLight:'transparent'}}
                         onClick={()=>openModal(emp,di)} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(null)}>
-                        {(()=>{const ab=absenceFor(emp.id,date);if(!ab)return null;const t=absenceType(ab.type);const pending=ab.status==='en_attente';return(
-                          <div {...(pending?{'data-pdf-hide':true}:{})} title={pending?'Demande en attente : '+t.label:t.label}
+                        {absencesFor(emp.id,date).map(ab=>{const t=absenceType(ab.type);const pending=ab.status==='en_attente';return(
+                          <div key={ab.id} {...(pending?{'data-pdf-hide':true}:{})} title={pending?'Demande en attente : '+t.label:t.label}
                             style={{borderRadius:'5px',padding:'2px 6px',marginBottom:'2px',fontSize:'10px',fontWeight:600,textAlign:'center',background:pending?'transparent':t.bg,color:t.color,border:(pending?'1px dashed ':'1px solid ')+t.color}}>
                             {t.short}{pending?' ?':''}
-                          </div>);})()}
+                          </div>);})}
                         {dayShifts.length>0?(
                           <div style={{display:'flex',flexDirection:'column',gap:'2px'}}>
                             {dayShifts.map((shift,si)=>{

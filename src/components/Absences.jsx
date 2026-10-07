@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
-import { absenceType, absencePeriod, absenceDays, frDate, isModified, statusInfo, requestedPeriod } from '../absences';
+import { absenceType, absencePeriod, absenceDays, frDate, isModified, statusInfo, requestedPeriod, overlaps, isActive } from '../absences';
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 
@@ -131,6 +131,17 @@ export default function Absences() {
                         <span style={{ background: t.bg, color: t.color, padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>{t.label}</span>
                         <span style={{ marginLeft: '8px' }}>{absencePeriod(a)} · {absenceDays(a)} jour{absenceDays(a) > 1 ? 's' : ''}</span>
                       </div>
+                      {isActive(a) && (() => {
+                        // Autres absences actives qui chevauchent : meme salarie, puis collegues du meme service
+                        const others = requests.filter(o => o.id !== a.id && isActive(o) && overlaps(a, o));
+                        const same = others.filter(o => o.employee_id === a.employee_id);
+                        const team = others.filter(o => o.employee_id !== a.employee_id && o.employees?.service === a.employees?.service);
+                        const desc = o => absenceType(o.type).short + ', ' + absencePeriod(o).toLowerCase() + (o.status === 'en_attente' ? ', en attente' : '');
+                        return (<>
+                          {same.length > 0 && <div style={{ fontSize: '11px', color: C.red, marginTop: '6px' }}>⚠️ Chevauche une autre absence de ce salarié : {same.map(desc).join(' · ')}</div>}
+                          {team.length > 0 && <div style={{ fontSize: '11px', color: C.amber, marginTop: '6px' }}>👥 Également absents ({a.employees?.service}) : {team.map(o => o.employees?.first_name + ' (' + desc(o) + ')').join(' · ')}</div>}
+                        </>);
+                      })()}
                       {isModified(a) && <div style={{ fontSize: '11px', color: C.amber, marginTop: '4px' }}>Demandé initialement : {requestedPeriod(a).toLowerCase()}</div>}
                       {a.comment && <div style={{ fontSize: '11px', color: C.muted, fontStyle: 'italic', marginTop: '4px' }}>« {a.comment} »</div>}
                       <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px' }}>Demandé le {frDate(a.created_at)}{a.decided_at ? ' · traité le ' + frDate(a.decided_at) : ''}</div>

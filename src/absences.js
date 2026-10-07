@@ -47,3 +47,10 @@ export function statusInfo(a) {
 
 // "Du ... au ..." des dates initialement demandees par le salarie
 export const requestedPeriod = a => absencePeriod({ start_date: a.original_start_date, end_date: a.original_end_date });
+
+// Deux periodes d'absence se chevauchent-elles (bornes incluses) ?
+export const overlaps = (a, b) => String(a.start_date).slice(0, 10) <= String(b.end_date).slice(0, 10)
+  && String(b.start_date).slice(0, 10) <= String(a.end_date).slice(0, 10);
+
+// Absences "actives" (en attente ou acceptees) : celles qui comptent pour les chevauchements
+export const isActive = a => a.status === 'en_attente' || a.status === 'acceptee';

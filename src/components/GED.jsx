@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 
+const API = 'https://mon-planning-production.up.railway.app/api';
 const DOC_TYPES = [
   { id: 'bulletin_paie', label: 'Bulletin de paie', icon: '💰' },
   { id: 'contrat', label: 'Contrat', icon: '📄' },
@@ -12,9 +14,13 @@ const DOC_TYPES = [
 ];
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
+const MOIS=['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
+function formatPeriode(p){const m=/^(\d{4})-(\d{2})$/.exec(p||'');return m?MOIS[parseInt(m[2],10)-1]+' '+m[1]:(p||'');}
 function formatSize(bytes){if(!bytes)return'';if(bytes<1024)return bytes+' o';if(bytes<1048576)return Math.round(bytes/1024)+' Ko';return(bytes/1048576).toFixed(1)+' Mo';}
 
-export default function GED({ isManager }) {
+export default function GED({ profile, isManager: isManagerProp }) {
+  // App transmet le profil : on en deduit le role (le parametre isManager reste accepte)
+  const isManager = isManagerProp ?? (profile?.role === 'admin' || profile?.role === 'manager');
   const { colors: C } = useTheme();
   const [employees,setEmployees]=useState([]);
   const [selectedEmp,setSelectedEmp]=useState(null);
@@ -28,7 +34,7 @@ export default function GED({ isManager }) {
   const toastTimer=useRef(null);
 
   useEffect(()=>{
-    if(isManager){supabase.from('employees').select('*').order('last_name').then(({data})=>{if(data&&data.length>0){setEmployees(data);setSelectedEmp(data[0]);}});}
+    if(isManager){supabase.from('employees').select('*').eq('is_temp',false).order('last_name').then(({data})=>{const list=(data||[]).filter(e=>e.is_active||e.onboarding_completed);if(list.length>0){setEmployees(list);setSelectedEmp(list[0]);}});}
   },[isManager]);
 
   useEffect(()=>{if(selectedEmp)loadDocuments();
@@ -37,11 +43,15 @@ export default function GED({ isManager }) {
 
   function showToast(msg,color){setToast({msg,color:color||C.green});clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToast(''),3000);}
   async function loadDocuments(){if(!selectedEmp)return;try{const{data,error}=await supabase.from('documents').select('*').eq('employee_id',selectedEmp.id).order('created_at',{ascending:false});if(error)throw error;setDocuments(data||[]);}catch(err){console.error(err);}}
-  async function handleUpload(){if(!uploadForm.file||!uploadForm.title||!selectedEmp){showToast('Remplis tous les champs',C.amber);return;}setUploading(true);
+  async function handleUpload(){
+    const title=uploadForm.title.trim()||(uploadForm.type==='bulletin_paie'&&uploadForm.periode?'Bulletin de paie '+formatPeriode(uploadForm.periode):'');
+    if(!uploadForm.file||!title||!selectedEmp){showToast(uploadForm.type==='bulletin_paie'?'Choisis le fichier et la periode':'Remplis tous les champs',C.amber);return;}setUploading(true);
     try{const file=uploadForm.file;const ext=file.name.split('.').pop();const filePath=selectedEmp.id+'/'+Date.now()+'.'+ext;
       const{error:ue}=await supabase.storage.from('documents-rh').upload(filePath,file,{contentType:file.type});if(ue)throw ue;
-      const{error:de}=await supabase.from('documents').insert({employee_id:selectedEmp.id,type:uploadForm.type,title:uploadForm.title,file_path:filePath,file_name:file.name,file_size:file.size,mime_type:file.type,periode:uploadForm.periode||null});if(de)throw de;
-      showToast('Document depose');setUploadModal(false);setUploadForm({type:'bulletin_paie',title:'',periode:'',file:null});await loadDocuments();
+      const{error:de}=await supabase.from('documents').insert({employee_id:selectedEmp.id,type:uploadForm.type,title,file_path:filePath,file_name:file.name,file_size:file.size,mime_type:file.type,periode:uploadForm.periode||null});if(de)throw de;
+      // Previent le salarie par email (sans bloquer le depot si l'envoi echoue)
+      axios.post(API+'/documents/notify',{employee_id:selectedEmp.id,type:uploadForm.type,title,periode:uploadForm.periode||null}).catch(()=>{});
+      showToast('Document depose'+(selectedEmp.email?' · email envoye a '+selectedEmp.first_name:''));setUploadModal(false);setUploadForm({type:'bulletin_paie',title:'',periode:'',file:null});await loadDocuments();
     }catch(err){showToast('Erreur : '+err.message,C.red);}finally{setUploading(false);}
   }
   async function handleDownload(doc){try{const{data,error}=await supabase.storage.from('documents-rh').createSignedUrl(doc.file_path,60);if(error)throw error;window.open(data.signedUrl,'_blank');}catch{showToast('Erreur',C.red);}}
@@ -96,7 +106,7 @@ export default function GED({ isManager }) {
             <div style={{fontSize:'14px',fontWeight:600,marginBottom:'16px',color:C.text}}>Deposer un document</div>
             {selectedEmp&&<div style={{fontSize:'12px',color:C.muted,marginBottom:'14px',padding:'8px 10px',background:C.bg,borderRadius:'6px',border:'1px solid '+C.border}}>Pour : {selectedEmp.first_name} {selectedEmp.last_name}</div>}
             <div style={{marginBottom:'10px'}}><label style={lbl}>TYPE</label><select style={inp} value={uploadForm.type} onChange={e=>setUploadForm(f=>({...f,type:e.target.value}))}>{DOC_TYPES.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}</select></div>
-            <div style={{marginBottom:'10px'}}><label style={lbl}>TITRE</label><input style={inp} placeholder="Ex: Bulletin mai 2026" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/></div>
+            <div style={{marginBottom:'10px'}}><label style={lbl}>TITRE</label><input style={inp} placeholder={uploadForm.type==='bulletin_paie'?'Facultatif : rempli automatiquement avec la periode':'Ex : Attestation employeur'} value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/></div>
             <div style={{marginBottom:'10px'}}><label style={lbl}>PERIODE</label><input type="month" style={inp} value={uploadForm.periode} onChange={e=>setUploadForm(f=>({...f,periode:e.target.value}))}/></div>
             <div style={{marginBottom:'16px'}}><label style={lbl}>FICHIER</label>
               <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e=>setUploadForm(f=>({...f,file:e.target.files[0]}))} style={{...inp,padding:'6px'}}/>

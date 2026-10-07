@@ -4,6 +4,20 @@ import { useTheme } from '../ThemeContext';
 
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
+const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
+const CONTRATS = ['CDI', 'CDD', 'Saisonnier', 'Apprentissage', 'Stage', 'Extra'];
+
+// Valeurs de l'encadre "Affectation et contrat" a partir d'une fiche salarie
+function contractFormFrom(emp) {
+  return {
+    service: emp.service || 'Non defini',
+    services_secondaires: (emp.services_secondaires || '').split(',').map(s => s.trim()).filter(Boolean),
+    role: emp.role || '',
+    contract_type: emp.contract_type || 'Non defini',
+    contract_hours: emp.contract_hours ?? 35,
+    hire_date: emp.hire_date ? String(emp.hire_date).slice(0, 10) : '',
+  };
+}
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
 
 export default function DossiersRH() {
@@ -24,6 +38,8 @@ export default function DossiersRH() {
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
   const [creatingLink, setCreatingLink] = useState(false);
+  const [contractForm, setContractForm] = useState(null);
+  const [savingContract, setSavingContract] = useState(false);
   const toastTimer = React.useRef(null);
 
   useEffect(() => { loadAll(); }, []);
@@ -51,6 +67,7 @@ export default function DossiersRH() {
 
   async function loadEmpDetails(emp) {
     setSelectedEmp(emp);
+    setContractForm(contractFormFrom(emp));
     setMergeModal(false);
     setSelectedTempId('');
     const [respRes, docsRes] = await Promise.all([
@@ -61,7 +78,32 @@ export default function DossiersRH() {
     setDocuments(docsRes.data || []);
   }
 
+  // Enregistre l'affectation (service, poste) et les infos de contrat d'un salarie
+  async function saveContract() {
+    if (!contractForm.service || contractForm.service === 'Non defini') { showToast('Choisissez un service', C.red); return; }
+    setSavingContract(true);
+    try {
+      const patch = {
+        service: contractForm.service,
+        services_secondaires: contractForm.services_secondaires.filter(s => s !== contractForm.service).join(',') || null,
+        role: contractForm.role.trim() || 'Employe',
+        contract_type: contractForm.contract_type,
+        contract_hours: parseFloat(contractForm.contract_hours) || 35,
+        hire_date: contractForm.hire_date || null,
+      };
+      const { data, error } = await supabase.from('employees').update(patch).eq('id', selectedEmp.id).select().single();
+      if (error) throw error;
+      setEmployees(prev => prev.map(e => e.id === data.id ? data : e));
+      setSelectedEmp(data);
+      setContractForm(contractFormFrom(data));
+      showToast('Affectation enregistree');
+    } catch (err) {
+      showToast('Erreur : ' + err.message, C.red);
+    } finally { setSavingContract(false); }
+  }
+
   async function validateEmployee(emp) {
+    if (!emp.service || emp.service === 'Non defini') { showToast("Choisissez d'abord un service dans « Affectation et contrat »", C.red); return; }
     await supabase.from('employees').update({ is_active: true }).eq('id', emp.id);
     setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, is_active: true } : e));
     if (selectedEmp?.id === emp.id) setSelectedEmp(e => ({ ...e, is_active: true }));
@@ -315,13 +357,64 @@ export default function DossiersRH() {
                 </div>
               )}
 
+              {/* Affectation et contrat (modifiable par le manager) */}
+              {contractForm && (
+                <div style={{ background: C.card, border: '1px solid ' + (contractForm.service === 'Non defini' ? C.amber : C.border), borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+                  <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '4px' }}>AFFECTATION ET CONTRAT</div>
+                  {contractForm.service === 'Non defini' && (
+                    <div style={{ fontSize: '12px', color: C.amber, marginBottom: '10px' }}>⚠️ Aucun service : ce salarié n'apparaît dans aucun planning. Choisissez son service puis enregistrez.</div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', marginTop: '10px' }}>
+                    <label style={{ fontSize: '11px', color: C.muted }}>SERVICE *
+                      <select style={{ ...inp, width: '100%', marginTop: '4px' }} value={contractForm.service} onChange={e => setContractForm(f => ({ ...f, service: e.target.value }))}>
+                        <option value="Non defini">-- Choisir --</option>
+                        {SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: '11px', color: C.muted }}>POSTE
+                      <input style={{ ...inp, width: '100%', marginTop: '4px', boxSizing: 'border-box' }} value={contractForm.role} placeholder="Ex : Agent accueil" onChange={e => setContractForm(f => ({ ...f, role: e.target.value }))} />
+                    </label>
+                    <label style={{ fontSize: '11px', color: C.muted }}>TYPE DE CONTRAT
+                      <select style={{ ...inp, width: '100%', marginTop: '4px' }} value={contractForm.contract_type} onChange={e => setContractForm(f => ({ ...f, contract_type: e.target.value }))}>
+                        <option value="Non defini">-- Choisir --</option>
+                        {CONTRATS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: '11px', color: C.muted }}>HEURES / SEMAINE
+                      <input type="number" min="1" max="48" step="0.5" style={{ ...inp, width: '100%', marginTop: '4px', boxSizing: 'border-box' }} value={contractForm.contract_hours} onChange={e => setContractForm(f => ({ ...f, contract_hours: e.target.value }))} />
+                    </label>
+                    <label style={{ fontSize: '11px', color: C.muted }}>DATE D'EMBAUCHE
+                      <input type="date" style={{ ...inp, width: '100%', marginTop: '4px', boxSizing: 'border-box' }} value={contractForm.hire_date} onChange={e => setContractForm(f => ({ ...f, hire_date: e.target.value }))} />
+                    </label>
+                  </div>
+                  <div style={{ marginTop: '12px', fontSize: '11px', color: C.muted }}>SERVICES SECONDAIRES (apparaît aussi dans ces plannings)</div>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                    {SERVICES.filter(s => s !== contractForm.service).map(s => {
+                      const on = contractForm.services_secondaires.includes(s);
+                      return (
+                        <button key={s} type="button" onClick={() => setContractForm(f => ({ ...f, services_secondaires: on ? f.services_secondaires.filter(x => x !== s) : [...f.services_secondaires, s] }))}
+                          style={{ padding: '4px 10px', borderRadius: '20px', border: '1px solid ' + (on ? C.purple : C.border), background: on ? C.purpleLight : 'none', color: on ? C.purple : C.muted, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit' }}>
+                          {on ? '✓ ' : ''}{s}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: '14px', textAlign: 'right' }}>
+                    <button onClick={saveContract} disabled={savingContract}
+                      style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '8px 18px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: savingContract ? 'not-allowed' : 'pointer', opacity: savingContract ? 0.7 : 1 }}>
+                      {savingContract ? 'Enregistrement...' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Informations */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '16px' }}>
                   <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '14px' }}>INFORMATIONS PERSONNELLES</div>
-                  {responses.filter(r => r.onboarding_fields?.field_type !== 'file').length === 0 ? (
+                  {responses.filter(r => !['file','signature'].includes(r.onboarding_fields?.field_type)).length === 0 ? (
                     <div style={{ color: C.muted, fontSize: '12px' }}>Aucune information renseignee</div>
-                  ) : responses.filter(r => r.onboarding_fields?.field_type !== 'file').map(r => (
+                  ) : responses.filter(r => !['file','signature'].includes(r.onboarding_fields?.field_type)).map(r => (
                     <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid ' + C.border + '66', fontSize: '12px' }}>
                       <span style={{ color: C.muted }}>{r.onboarding_fields?.label}</span>
                       <span style={{ color: C.text, fontWeight: 500, textAlign: 'right', maxWidth: '60%', wordBreak: 'break-word' }}>{r.value}</span>

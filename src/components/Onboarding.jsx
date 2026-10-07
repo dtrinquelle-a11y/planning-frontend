@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
+import { SignaturePad, buildDispensePdf, dispenseText } from './DispenseMutuelle';
+
+// Options d'un champ select : separees par "|" (ou "," pour les anciens champs)
+function fieldOptions(field) {
+  const raw = field.options || '';
+  return raw.split(raw.includes('|') ? '|' : ',').map(o => o.trim()).filter(Boolean);
+}
 
 // Client dedie a l'onboarding : session en memoire, isolee de l'application.
 // Evite d'attendre le verrou de session d'un autre onglet et de deconnecter un manager connecte.
@@ -38,6 +45,12 @@ export default function Onboarding() {
   const [error, setError] = useState('');
   const [employeeId, setEmployeeId] = useState(null);
   const [privacyAck, setPrivacyAck] = useState(false);
+  const [signatures, setSignatures] = useState({}); // champ signature -> image PNG
+  const [sigAck, setSigAck] = useState({});         // champ signature -> case "je certifie" cochee
+
+  // Un champ conditionnel n'est affiche (et obligatoire) que si la reponse attendue est choisie
+  const isVisible = f => !f.show_if_field_id || responses[f.show_if_field_id] === f.show_if_value;
+  const fieldByLabel = label => fields.find(f => f.label === label);
 
   useEffect(() => {
     if (ACCESS_TOKEN) {
@@ -147,11 +160,15 @@ export default function Onboarding() {
 
   async function submitForm() {
     setError('');
-    const missing = fields.filter(f => f.required && (f.field_type === 'file' ? !files[f.id] : !String(responses[f.id] || '').trim()));
+    const shown = fields.filter(isVisible);
+    const missing = shown.filter(f => f.required && (
+      f.field_type === 'file' ? !files[f.id]
+      : f.field_type === 'signature' ? !(signatures[f.id] && sigAck[f.id])
+      : !String(responses[f.id] || '').trim()));
     if (missing.length) { setError('Champs obligatoires manquants : ' + missing.map(f => f.label).join(', ')); return; }
     setLoading(true);
     try {
-      const textFields = fields.filter(f => f.field_type !== 'file');
+      const textFields = shown.filter(f => f.field_type !== 'file' && f.field_type !== 'signature');
       for (const field of textFields) {
         if (responses[field.id]) {
           const { error: respError } = await supabase.from('onboarding_responses').upsert({ employee_id: employeeId, field_id: field.id, value: responses[field.id] }, { onConflict: 'employee_id,field_id' });
@@ -159,7 +176,25 @@ export default function Onboarding() {
         }
       }
 
-      const fileFields = fields.filter(f => f.field_type === 'file');
+      // Attestations signees : generation du PDF puis depot dans le dossier du salarie
+      for (const field of shown.filter(f => f.field_type === 'signature' && signatures[f.id])) {
+        const blob = buildDispensePdf({
+          fullName: identity.first_name.trim() + ' ' + identity.last_name.trim(),
+          email: identity.email.trim().toLowerCase(),
+          motif: responses[fieldByLabel('Motif de dispense')?.id],
+          organisme: responses[fieldByLabel('Organisme de votre mutuelle actuelle')?.id],
+          signature: signatures[field.id],
+        });
+        const filePath = employeeId + '/onboarding/' + field.id + '.pdf';
+        const { error: upErr } = await supabase.storage.from('documents-rh').upload(filePath, blob, { contentType: 'application/pdf', upsert: true });
+        if (upErr) throw upErr;
+        const { error: docErr } = await supabase.from('documents').insert({ employee_id: employeeId, type: 'autre', title: field.label, file_path: filePath, file_name: 'dispense-mutuelle-signee.pdf', file_size: blob.size, mime_type: 'application/pdf' });
+        if (docErr) throw docErr;
+        const { error: respErr } = await supabase.from('onboarding_responses').upsert({ employee_id: employeeId, field_id: field.id, value: filePath }, { onConflict: 'employee_id,field_id' });
+        if (respErr) throw respErr;
+      }
+
+      const fileFields = shown.filter(f => f.field_type === 'file');
       for (const field of fileFields) {
         const file = files[field.id];
         if (!file) continue;
@@ -183,8 +218,9 @@ export default function Onboarding() {
     } finally { setLoading(false); }
   }
 
-  const textFields = fields.filter(f => f.field_type !== 'file');
-  const fileFields = fields.filter(f => f.field_type === 'file');
+  const textFields = fields.filter(f => isVisible(f) && f.field_type !== 'file' && f.field_type !== 'signature');
+  const fileFields = fields.filter(f => isVisible(f) && f.field_type === 'file');
+  const signatureFields = fields.filter(f => isVisible(f) && f.field_type === 'signature');
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Mono','Courier New',monospace", padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -283,12 +319,12 @@ export default function Onboarding() {
               <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '20px', color: C.text }}>Informations personnelles</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 {textFields.map(field => (
-                  <div key={field.id} style={{ gridColumn: field.label.toLowerCase().includes('adresse') ? 'span 2' : 'span 1' }}>
+                  <div key={field.id} style={{ gridColumn: field.label.toLowerCase().includes('adresse') || field.label.length > 30 || fieldOptions(field).some(o => o.length > 25) ? 'span 2' : 'span 1' }}>
                     <label style={lbl}>{field.label.toUpperCase()} {field.required ? '*' : ''}</label>
                     {field.field_type === 'select' ? (
                       <select style={inp} value={responses[field.id] || ''} onChange={e => setResponses(r => ({ ...r, [field.id]: e.target.value }))}>
                         <option value="">-- Choisir --</option>
-                        {(field.options || '').split(',').map(o => <option key={o} value={o.trim()}>{o.trim()}</option>)}
+                        {fieldOptions(field).map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (
                       <input type={field.field_type} style={inp} value={responses[field.id] || ''} onChange={e => setResponses(r => ({ ...r, [field.id]: e.target.value }))} />
@@ -314,6 +350,26 @@ export default function Onboarding() {
                 ))}
               </div>
             </div>
+            {signatureFields.map(field => {
+              const fullName = (identity.first_name + ' ' + identity.last_name).trim();
+              const motif = responses[fieldByLabel('Motif de dispense')?.id];
+              const organisme = responses[fieldByLabel('Organisme de votre mutuelle actuelle')?.id];
+              return (
+                <div key={field.id} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '24px', marginBottom: '16px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '6px', color: C.text }}>{field.label} {field.required ? '*' : ''}</div>
+                  <div style={{ fontSize: '12px', color: C.muted, marginBottom: '14px' }}>Relisez l'attestation, signez-la puis cochez la case de certification. Un PDF signé sera ajouté à votre dossier.</div>
+                  <div style={{ background: C.bg, border: '1px solid ' + C.border, borderRadius: '8px', padding: '14px', marginBottom: '14px', fontSize: '12px', color: C.text, lineHeight: 1.6 }}>
+                    {dispenseText({ fullName, motif, organisme }).map((p, i) => <p key={i} style={{ margin: '0 0 8px' }}>{p}</p>)}
+                    {(!motif || !organisme) && <div style={{ color: C.amber, fontSize: '11px' }}>Renseignez le motif de dispense et l'organisme de votre mutuelle ci-dessus pour compléter l'attestation.</div>}
+                  </div>
+                  <SignaturePad color={C.green} onChange={img => setSignatures(s => ({ ...s, [field.id]: img }))} />
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '12px', fontSize: '12px', color: C.text, lineHeight: 1.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!sigAck[field.id]} onChange={e => setSigAck(a => ({ ...a, [field.id]: e.target.checked }))} style={{ marginTop: '2px', cursor: 'pointer' }} />
+                    <span>Je certifie sur l'honneur l'exactitude des informations ci-dessus et signe cette attestation électroniquement. *</span>
+                  </label>
+                </div>
+              );
+            })}
             {error && <div style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: C.red, marginBottom: '14px' }}>{error}</div>}
             <button onClick={submitForm} disabled={loading}
               style={{ width: '100%', background: C.purple, border: 'none', borderRadius: '10px', padding: '14px', color: '#fff', fontSize: '14px', fontFamily: 'inherit', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>

@@ -1,6 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
+import supabase from '../supabase';
+
+// Photo de pointage : miniature au survol (lien temporaire de 5 min), clic pour l'ouvrir en grand
+function PhotoThumb({ photo, C }) {
+  const [url, setUrl] = useState(null);
+  const [show, setShow] = useState(false);
+  async function getUrl() {
+    if (url) return url;
+    const { data } = await supabase.storage.from('documents-rh').createSignedUrl(photo.path, 300);
+    if (data?.signedUrl) setUrl(data.signedUrl);
+    return data?.signedUrl;
+  }
+  return (
+    <span style={{ position: 'relative', display: 'inline-block', marginRight: '4px' }}
+      onMouseEnter={() => { setShow(true); getUrl(); }} onMouseLeave={() => setShow(false)}>
+      <button onClick={async () => { const u = await getUrl(); if (u) window.open(u, '_blank'); }}
+        style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '4px', padding: '1px 5px', color: C.purple, fontSize: '10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+        📷 {photo.label}
+      </button>
+      {show && (
+        <span style={{ position: 'absolute', zIndex: 50, top: '100%', left: 0, marginTop: '4px', background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
+          {url ? <img src={url} alt={photo.label} style={{ display: 'block', width: '160px', borderRadius: '6px' }} />
+               : <span style={{ display: 'block', width: '160px', padding: '20px 0', textAlign: 'center', fontSize: '10px', color: C.muted }}>Chargement...</span>}
+        </span>
+      )}
+    </span>
+  );
+}
 
 const API = 'https://mon-planning-production.up.railway.app/api';
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -132,6 +160,7 @@ export default function Realise() {
                         <td key={d} style={{ ...cell, background: bad ? C.amberLight : 'transparent' }}>
                           {c.planned && <div style={{ color: C.muted }}>prévu {c.planned}</div>}
                           <div style={{ fontWeight: 500 }}>{c.actual ? 'pointé ' + c.actual : <span style={{ color: C.muted }}>non pointé</span>}</div>
+                          {c.photos && c.photos.length > 0 && <div style={{ margin: '3px 0' }}>{c.photos.map((ph, i) => <PhotoThumb key={i} photo={ph} C={C} />)}</div>}
                           {c.anomalies.map((a, i) => <div key={i} style={{ color: ANOM_COLOR[a.code] || C.amber, fontSize: '10px', fontWeight: 600 }}>⚠ {a.label}</div>)}
                         </td>
                       );

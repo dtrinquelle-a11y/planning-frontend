@@ -1,6 +1,5 @@
 /* eslint-disable */
 import Parametrage from './components/Parametrage';
-import HelpPanel from './components/HelpPanel';
 import React, { useState, useEffect, useRef } from 'react';
 import supabase from './supabase';
 import { ThemeProvider, useTheme } from './ThemeContext';
@@ -217,7 +216,6 @@ function AppInner() {
           {empName && <span style={{ fontSize: '12px', color: C.muted }}>{empName}</span>}
           <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: C.muted }}>Confidentialité</a>
           <button onClick={handleLogout} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px' }}>Déconnexion</button>
-          <HelpPanel />
         </div>
       </nav>
       <div style={{ padding: '0' }}>

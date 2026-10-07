@@ -111,11 +111,22 @@ export default function Pointeuse({ employeeId, employeeName }) {
     if (loading) return;
     setLoading(true);
     try {
-      const body = { employee_id: employeeId, action, photo_base64: photoBase64 || null };
+      // Photo deposee dans le dossier securise du salarie ; le pointage reste enregistre meme si l'envoi echoue
+      let photo_path = null, photoWarning = false;
+      if (photoBase64 && employeeId) {
+        try {
+          const blob = await (await fetch(photoBase64)).blob();
+          const path = employeeId + '/pointage/' + Date.now() + '-' + action + '.jpg';
+          const { error: upErr } = await supabase.storage.from('documents-rh').upload(path, blob, { contentType: 'image/jpeg' });
+          if (upErr) throw upErr;
+          photo_path = path;
+        } catch { photoWarning = true; }
+      }
+      const body = { employee_id: employeeId, action, photo_path };
       if (position) { body.latitude = position.lat; body.longitude = position.lon; body.geo_valid = geoStatus === 'ok'; }
       const r = await axios.post(API+'/timeclock/scan', body);
       setLastAction(action);
-      if (r.data.photo_warning) {
+      if (photoWarning || r.data.photo_warning) {
         showToast('⚠️ Photo non sauvegardée — pointage enregistré', C.amber, 5000);
       } else {
         showToast(r.data.message || (action==='in' ? 'Arrivée enregistrée' : 'Départ enregistré'));

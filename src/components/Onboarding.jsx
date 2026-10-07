@@ -3,6 +3,24 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
 import { SignaturePad, buildDispensePdf, dispenseText } from './DispenseMutuelle';
 
+// Photo trop lourde (telephone) : redimensionnee a 2000 px max et recompressee en JPEG pour passer sous la limite
+async function compressImage(file, maxBytes) {
+  if (!file.type.startsWith('image/') || file.size <= Math.min(maxBytes, 1.5 * 1024 * 1024)) return file;
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = URL.createObjectURL(file);
+  });
+  const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(img.src);
+  for (const q of [0.8, 0.65, 0.5]) {
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+    if (blob && blob.size <= maxBytes) return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  }
+  return file;
+}
+
 // Options d'un champ select : separees par "|" (ou "," pour les anciens champs)
 function fieldOptions(field) {
   const raw = field.options || '';
@@ -341,9 +359,19 @@ export default function Onboarding() {
                   <div key={field.id}>
                     <label style={lbl}>{field.label.toUpperCase()} {field.required ? '*' : ''}</label>
                     <div style={{ border: '2px dashed ' + (files[field.id] ? C.green : C.border), borderRadius: '8px', padding: '12px', background: files[field.id] ? C.greenLight : C.bg }}>
-                      <input type="file" accept={field.accepted_formats || '.pdf,.jpg,.jpeg,.png'}
-                        onChange={e => { const f = e.target.files[0]; if (f) setFiles(fs => ({ ...fs, [field.id]: f })); }}
-                        style={{ width: '100%', fontSize: '12px', color: C.text, fontFamily: 'inherit', cursor: 'pointer' }} />
+                      {/* Deux facons d'ajouter la piece : choisir un fichier, ou prendre une photo (ouvre l'appareil photo sur telephone) */}
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <label style={{ flex: 1, minWidth: '140px', textAlign: 'center', padding: '8px', border: '1px solid ' + C.border, borderRadius: '6px', background: C.card, fontSize: '12px', cursor: 'pointer' }}>
+                          📁 Choisir un fichier
+                          <input type="file" accept={field.accepted_formats || '.pdf,.jpg,.jpeg,.png'} style={{ display: 'none' }}
+                            onChange={async e => { const f = e.target.files[0]; if (f) { const c = await compressImage(f, (field.max_file_size_kb || 2048) * 1024); setFiles(fs => ({ ...fs, [field.id]: c })); } e.target.value = ''; }} />
+                        </label>
+                        <label style={{ flex: 1, minWidth: '140px', textAlign: 'center', padding: '8px', border: '1px solid ' + C.purple + '66', borderRadius: '6px', background: C.purpleLight, color: C.purple, fontSize: '12px', cursor: 'pointer' }}>
+                          📷 Prendre une photo
+                          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                            onChange={async e => { const f = e.target.files[0]; if (f) { const c = await compressImage(f, (field.max_file_size_kb || 2048) * 1024); setFiles(fs => ({ ...fs, [field.id]: c })); } e.target.value = ''; }} />
+                        </label>
+                      </div>
                       {files[field.id] && <div style={{ fontSize: '11px', color: C.green, marginTop: '6px' }}>✓ {files[field.id].name} ({Math.round(files[field.id].size / 1024)} Ko)</div>}
                     </div>
                   </div>

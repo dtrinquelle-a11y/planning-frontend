@@ -54,6 +54,15 @@ export default function EspaceSalarie({ profile }) {
   const [absSaving,setAbsSaving]=useState(false);
   const [absMsg,setAbsMsg]=useState(null);
   const [tabBadges,setTabBadges]=useState({});
+  // Heures modulees validees par le manager (periode de modulation en cours : 1er nov -> 31 oct)
+  const [modulees,setModulees]=useState([]);
+  useEffect(()=>{
+    if(tab!=='heures'||!selectedEmp)return;
+    const now=new Date();const y=now.getMonth()>=10?now.getFullYear():now.getFullYear()-1;
+    supabase.from('payroll_months').select('month, overtime_paid, overtime_banked').eq('employee_id',selectedEmp.id)
+      .gte('month',y+'-11').lte('month',(y+1)+'-10').order('month')
+      .then(({data})=>setModulees(data||[]));
+  },[tab,selectedEmp]);
   const [weekAbsences,setWeekAbsences]=useState([]); // absences acceptees ou en attente de la semaine affichee
   useEffect(()=>{
     if(!selectedEmp)return;
@@ -351,6 +360,40 @@ export default function EspaceSalarie({ profile }) {
         {tab==='heures'&&(
           <div>
             <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'14px'}}>MES HEURES · CC HPA</div>
+            {(()=>{
+              const MOIS=['jan.','fev.','mars','avr.','mai','juin','juil.','aout','sept.','oct.','nov.','dec.'];
+              const fmt=v=>(Math.round(Number(v)*100)/100).toString().replace('.',',')+' h';
+              const banked=modulees.reduce((n,m)=>n+Number(m.overtime_banked),0);
+              const paid=modulees.reduce((n,m)=>n+Number(m.overtime_paid),0);
+              return(
+                <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'12px',boxShadow:C.shadow+' 0 2px 8px'}}>
+                  <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'12px'}}>COMPTEUR D'HEURES MODULÉES</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:modulees.length?'12px':'0'}}>
+                    <div style={{textAlign:'center',padding:'12px',background:C.purpleLight,border:'1px solid '+C.purple+'44',borderRadius:'8px'}}>
+                      <div style={{fontSize:'22px',fontWeight:600,color:C.purple}}>{fmt(banked)}</div>
+                      <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>reportées au compteur</div>
+                    </div>
+                    <div style={{textAlign:'center',padding:'12px',background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:'8px'}}>
+                      <div style={{fontSize:'22px',fontWeight:600,color:C.green}}>{fmt(paid)}</div>
+                      <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>payées</div>
+                    </div>
+                  </div>
+                  {modulees.length>0?(
+                    <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+                      {modulees.map(m=>{const [yy,mm]=m.month.split('-');return(
+                        <div key={m.month} style={{display:'flex',justifyContent:'space-between',fontSize:'11px',padding:'4px 0',borderBottom:'1px solid '+C.border+'66'}}>
+                          <span style={{color:C.text}}>{MOIS[parseInt(mm,10)-1]} {yy}</span>
+                          <span style={{color:C.muted}}>reportées {fmt(m.overtime_banked)} · payées {fmt(m.overtime_paid)}</span>
+                        </div>
+                      );})}
+                    </div>
+                  ):(
+                    <div style={{fontSize:'11px',color:C.muted,textAlign:'center'}}>Aucun mois validé pour le moment.</div>
+                  )}
+                  <div style={{fontSize:'10px',color:C.muted,marginTop:'8px'}}>Période de modulation du 1er novembre au 31 octobre · mois validés par votre responsable.</div>
+                </div>
+              );
+            })()}
             <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'12px',boxShadow:C.shadow+' 0 2px 8px'}}>
               <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'12px'}}>MODULATION ANNUELLE</div>
               <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'10px'}}>

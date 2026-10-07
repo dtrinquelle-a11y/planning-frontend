@@ -110,6 +110,7 @@ export default function DossiersRH() {
     setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, is_active: true } : e));
     if (selectedEmp?.id === emp.id) setSelectedEmp(e => ({ ...e, is_active: true }));
     showToast('Compte valide !');
+    window.dispatchEvent(new Event('badges-refresh')); // met a jour les pastilles du menu
   }
 
   async function mergeWithTemp() {

@@ -52,6 +52,7 @@ export default function Absences() {
       if (error) throw error;
       axios.post(API + '/absences/notify', { request_id: a.id, event: 'decided' }).catch(() => {});
       showToast(status === 'acceptee' ? 'Demande acceptée · salarié prévenu' : 'Demande refusée · salarié prévenu');
+      window.dispatchEvent(new Event('badges-refresh')); // met a jour les pastilles du menu
       await load();
     } catch (err) {
       showToast('Erreur : ' + err.message, C.red);

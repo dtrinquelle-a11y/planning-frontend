@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
 import { ABSENCE_TYPES, ABSENCE_STATUS, absenceType, absencePeriod, absenceDays } from '../absences';
+import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
 const DOC_GROUPS = [
@@ -52,6 +53,17 @@ export default function EspaceSalarie({ profile }) {
   const [absForm,setAbsForm]=useState({type:'conge_paye',start_date:'',end_date:'',comment:''});
   const [absSaving,setAbsSaving]=useState(false);
   const [absMsg,setAbsMsg]=useState(null);
+  const [tabBadges,setTabBadges]=useState({});
+  // Pastilles des onglets (salarie connecte uniquement) ; ouvrir l'onglet le marque comme vu
+  useEffect(()=>{
+    if(isManager||!ownEmployee)return;
+    if(tab==='absences'||tab==='documents')markSeen(tab,ownEmployee.id);
+    const refresh=()=>fetchEmployeeBadges(ownEmployee.id).then(setTabBadges).catch(()=>{});
+    refresh();
+    window.addEventListener('badges-refresh',refresh);
+    return()=>window.removeEventListener('badges-refresh',refresh);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab,isManager,ownEmployee?.id]);
   const [exportingPDF,setExportingPDF]=useState(false);
   const planningRef = useRef(null);
   const mon=getMonday(weekOffset);
@@ -189,7 +201,7 @@ export default function EspaceSalarie({ profile }) {
         )}
         <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
           {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},{id:'documents',label:'Mes documents'}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400}}>{t.label}</button>
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400,position:'relative'}}>{t.label}<Badge count={tab===t.id?0:tabBadges[t.id]} style={{top:'0px',right:'-4px'}}/></button>
           ))}
         </div>
       </div>

@@ -17,6 +17,7 @@ import DossiersRH from './components/DossiersRH';
 import Confidentialite from './components/Confidentialite';
 import ResetPassword from './components/ResetPassword';
 import Absences from './components/Absences';
+import { fetchManagerBadges, fetchEmployeeBadges, Badge } from './badges';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -29,6 +30,7 @@ function AppInner() {
   const isConfidentialite = window.location.pathname === '/confidentialite';
   const isReset = window.location.pathname === '/reinitialiser';
   const authRequestId = useRef(0);
+  const [badges, setBadges] = useState({}); // pastilles : nombre d'elements a traiter par onglet
   const justLoggedInRef = useRef(false);
 
   useEffect(() => {
@@ -142,6 +144,21 @@ function AppInner() {
     setSession(null); setProfile(null); setPage(null);
   }
 
+  // Pastilles : recalculees au chargement, a chaque changement de page, toutes les minutes et sur demande
+  const badgeRole = profile?.role;
+  const badgeEmpId = profile?.employees?.id || profile?.employee_id;
+  useEffect(() => {
+    if (!session || !badgeRole) return;
+    const manager = badgeRole === 'admin' || badgeRole === 'manager';
+    const refresh = () => (manager ? fetchManagerBadges() : fetchEmployeeBadges(badgeEmpId))
+      .then(b => setBadges(manager ? b : { salarie: b.absences + b.documents, ...b }))
+      .catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 60 * 1000);
+    window.addEventListener('badges-refresh', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('badges-refresh', refresh); };
+  }, [session, badgeRole, badgeEmpId, page]);
+
   if (isOnboarding) return <Onboarding />;
   if (isConfidentialite) return <Confidentialite />;
   if (isReset) return <ResetPassword />;
@@ -188,8 +205,8 @@ function AppInner() {
         <span style={{ color: C.purple, fontWeight: 600, marginRight: '16px', fontSize: '13px' }}>▸ PLANNING HPA</span>
         {navItems.map(p => (
           <button key={p.id} onClick={() => setPage(p.id)}
-            style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: page === p.id ? C.purple : 'transparent', color: page === p.id ? '#fff' : C.muted, cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
-          >{p.label}</button>
+            style={{ position: 'relative', padding: '6px 12px', borderRadius: '8px', border: 'none', background: page === p.id ? C.purple : 'transparent', color: page === p.id ? '#fff' : C.muted, cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
+          >{p.label}<Badge count={isManager ? (p.id === 'absences' ? badges.absences : p.id === 'dossiers' ? badges.dossiers : 0) : (p.id === 'salarie' ? badges.salarie : 0)} /></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button onClick={toggle} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: C.muted }}>{darkMode ? '☀️' : '🌙'}</button>

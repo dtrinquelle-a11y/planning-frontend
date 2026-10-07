@@ -15,6 +15,7 @@ export default function Absences() {
   const [comments, setComments] = useState({});   // commentaire manager par demande
   const [conflicts, setConflicts] = useState({}); // nb de creneaux planifies pendant l'absence
   const [busy, setBusy] = useState(null);
+  const [editing, setEditing] = useState(null); // { id, mode: 'edit'|'cancel', start, end, comment }
   const [toast, setToast] = useState(null);
 
   useEffect(() => { load(); }, []);
@@ -56,6 +57,29 @@ export default function Absences() {
       showToast('Erreur : ' + err.message, C.red);
     } finally { setBusy(null); }
   }
+
+  // Absence acceptee : modification des dates ou annulation par l'employeur (statut "annulee", trace conservee)
+  async function saveChange(a) {
+    const ed = editing;
+    if (!ed.comment.trim()) { showToast('Indiquez le motif (communiqué au salarié)', C.red); return; }
+    if (ed.mode === 'edit' && (!ed.start || !ed.end || ed.end < ed.start)) { showToast('Dates invalides', C.red); return; }
+    setBusy(a.id);
+    try {
+      const patch = ed.mode === 'cancel'
+        ? { status: 'annulee', manager_comment: ed.comment.trim(), decided_at: new Date().toISOString() }
+        : { start_date: ed.start, end_date: ed.end, manager_comment: ed.comment.trim(), decided_at: new Date().toISOString() };
+      const { error } = await supabase.from('absence_requests').update(patch).eq('id', a.id);
+      if (error) throw error;
+      axios.post(API + '/absences/notify', { request_id: a.id, event: ed.mode === 'cancel' ? 'cancelled' : 'modified' }).catch(() => {});
+      showToast(ed.mode === 'cancel' ? 'Absence annulée · salarié prévenu' : 'Dates modifiées · salarié prévenu');
+      setEditing(null);
+      await load();
+    } catch (err) {
+      showToast('Erreur : ' + err.message, C.red);
+    } finally { setBusy(null); }
+  }
+  // Jours avant le depart (delai de prevenance d'un mois pour modifier des conges valides : art. L3141-16)
+  const daysBefore = iso => Math.round((new Date(String(iso).slice(0, 10) + 'T00:00:00') - new Date(new Date().toDateString())) / 86400000);
 
   const pendingCount = requests.filter(a => a.status === 'en_attente').length;
   const today = new Date().toISOString().slice(0, 10);
@@ -108,6 +132,39 @@ export default function Absences() {
                     </div>
                     <span style={{ background: st.bg, color: st.color, padding: '3px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>{st.label}</span>
                   </div>
+                  {a.status === 'acceptee' && editing?.id !== a.id && String(a.end_date) >= today && (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '10px', justifyContent: 'flex-end' }}>
+                      <button onClick={() => setEditing({ id: a.id, mode: 'edit', start: String(a.start_date).slice(0, 10), end: String(a.end_date).slice(0, 10), comment: '' })}
+                        style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '5px 12px', color: C.text, fontSize: '11px', fontFamily: 'inherit', cursor: 'pointer' }}>✏️ Modifier les dates</button>
+                      <button onClick={() => setEditing({ id: a.id, mode: 'cancel', comment: '' })}
+                        style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '5px 12px', color: C.red, fontSize: '11px', fontFamily: 'inherit', cursor: 'pointer' }}>🗑️ Annuler</button>
+                    </div>
+                  )}
+                  {editing?.id === a.id && (
+                    <div style={{ marginTop: '12px', padding: '12px', background: C.bg, border: '1px solid ' + C.border, borderRadius: '8px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>{editing.mode === 'cancel' ? 'Annuler cette absence acceptée' : 'Modifier les dates'}</div>
+                      {daysBefore(a.start_date) < 30 && (
+                        <div style={{ fontSize: '11px', color: C.amber, marginBottom: '8px', lineHeight: 1.5 }}>
+                          ⚠️ Départ {daysBefore(a.start_date) <= 0 ? 'déjà commencé' : 'dans ' + daysBefore(a.start_date) + ' jour(s)'} : le délai de prévenance d'un mois n'est pas respecté.
+                          Une modification n'est possible qu'en cas de circonstances exceptionnelles ou avec l'accord du salarié.
+                        </div>
+                      )}
+                      {editing.mode === 'edit' && (
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                          <label style={{ fontSize: '10px', color: C.muted }}>DU<input type="date" style={{ ...inp, marginTop: '3px' }} value={editing.start} onChange={e => setEditing(x => ({ ...x, start: e.target.value }))} /></label>
+                          <label style={{ fontSize: '10px', color: C.muted }}>AU<input type="date" style={{ ...inp, marginTop: '3px' }} value={editing.end} min={editing.start} onChange={e => setEditing(x => ({ ...x, end: e.target.value }))} /></label>
+                        </div>
+                      )}
+                      <input style={{ ...inp, marginBottom: '8px' }} placeholder="Motif (communiqué au salarié) *" value={editing.comment} onChange={e => setEditing(x => ({ ...x, comment: e.target.value }))} />
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => setEditing(null)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '5px 12px', color: C.muted, fontSize: '11px', fontFamily: 'inherit', cursor: 'pointer' }}>Retour</button>
+                        <button disabled={busy === a.id} onClick={() => saveChange(a)}
+                          style={{ background: editing.mode === 'cancel' ? C.red : C.purple, border: 'none', borderRadius: '6px', padding: '5px 14px', color: '#fff', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', opacity: busy === a.id ? 0.6 : 1 }}>
+                          {editing.mode === 'cancel' ? "Confirmer l'annulation" : 'Enregistrer'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {a.status === 'en_attente' && (
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                       <input style={{ ...inp, flex: 1, minWidth: '200px' }} placeholder="Commentaire pour le salarié (facultatif)" value={comments[a.id] || ''} onChange={e => setComments(c => ({ ...c, [a.id]: e.target.value }))} />

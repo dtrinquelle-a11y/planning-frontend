@@ -4,7 +4,7 @@ import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
-import { ABSENCE_TYPES, ABSENCE_STATUS, absenceType, absencePeriod, absenceDays } from '../absences';
+import { ABSENCE_TYPES, ABSENCE_STATUS, absenceType, absencePeriod, absenceDays, absenceCovers } from '../absences';
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
@@ -54,6 +54,14 @@ export default function EspaceSalarie({ profile }) {
   const [absSaving,setAbsSaving]=useState(false);
   const [absMsg,setAbsMsg]=useState(null);
   const [tabBadges,setTabBadges]=useState({});
+  const [weekAbsences,setWeekAbsences]=useState([]); // absences acceptees de la semaine affichee
+  useEffect(()=>{
+    if(!selectedEmp)return;
+    supabase.from('absence_requests').select('*').eq('employee_id',selectedEmp.id).eq('status','acceptee')
+      .lte('start_date',fmtDate(addDays(mon,6))).gte('end_date',fmtDate(mon))
+      .then(({data})=>setWeekAbsences(data||[]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selectedEmp,weekOffset,tab]);
   // Pastilles des onglets (salarie connecte uniquement) ; ouvrir l'onglet le marque comme vu
   useEffect(()=>{
     if(isManager||!ownEmployee)return;
@@ -224,13 +232,16 @@ export default function EspaceSalarie({ profile }) {
 
             <div ref={planningRef} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               {DAYS.map((d,di)=>{
-                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());
+                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());const dayAbs=weekAbsences.find(a=>absenceCovers(a,fmtDate(day)));const absT=dayAbs?absenceType(dayAbs.type):null;
                 return(
                   <div key={di} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 14px',background:isToday?C.purpleLight:C.card,border:'1px solid '+(isToday?C.purple+'44':C.border),borderRadius:'8px',boxShadow:C.shadow+' 0 1px 4px'}}>
                     <div style={{minWidth:'70px'}}>
                       <div style={{fontSize:'11px',color:isToday?C.purple:C.muted}}>{d}</div>
                       <div style={{fontSize:'16px',fontWeight:600,color:isToday?C.purple:C.text}}>{day.getDate()}</div>
                     </div>
+                    {dayAbs&&(
+                      <div style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',background:absT.bg,border:'1px solid '+absT.color,color:absT.color,fontSize:'11px',fontWeight:600}}>{absT.label}</div>
+                    )}
                     {dayShifts.length>0?(
                       // Un jour peut avoir plusieurs creneaux (service coupe / double shift)
                       <div style={{flex:1,display:'flex',gap:'18px',flexWrap:'wrap'}}>
@@ -244,7 +255,7 @@ export default function EspaceSalarie({ profile }) {
                         );})}
                       </div>
                     ):(
-                      <div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>
+                      dayAbs?<div style={{flex:1}}/>:<div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>
                     )}
                   </div>
                 );

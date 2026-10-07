@@ -76,6 +76,11 @@ export default function Planning() {
   const [absences, setAbsences] = useState([]); // absences acceptees ou en attente sur la semaine
   const [contextShifts, setContextShifts] = useState([]); // creneaux des semaines voisines (repos a cheval sur deux semaines)
   const [showAlerts, setShowAlerts] = useState(false);
+  // Modeles de semaine
+  const [templates, setTemplates] = useState([]);
+  const [tplName, setTplName] = useState('');
+  const [tplReplace, setTplReplace] = useState(false);
+  const [tplBusy, setTplBusy] = useState(false);
   const [tempForm, setTempForm] = useState({ first_name: '', last_name: '', role: '' });
   const [dragEmpIdx, setDragEmpIdx] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
@@ -364,6 +369,66 @@ export default function Planning() {
     if (copyTargetOffset===weekOffset) loadShifts();
   }
 
+  // ---------- Modeles de semaine ----------
+  async function openTemplates() {
+    setTplName(''); setTplReplace(false); setModal('templates');
+    const { data } = await supabase.from('week_templates').select('*').eq('service', service).order('name');
+    setTemplates(data || []);
+  }
+
+  // Enregistre la semaine affichee (salaries visibles du service) comme modele
+  async function saveTemplate() {
+    const name = tplName.trim();
+    if (!name) { showToast('Donne un nom au modèle'); return; }
+    const shifts = filtered.flatMap(emp => weekShiftsOf(emp.id).map(sh => ({
+      employee_id: emp.id,
+      day: Math.round((new Date(String(sh.work_date).slice(0, 10) + 'T00:00:00') - mon) / 86400000),
+      start_time: String(sh.start_time).slice(0, 5), end_time: String(sh.end_time).slice(0, 5),
+      shift_type: sh.shift_type, break_minutes: parseInt(sh.break_minutes || 0, 10), note: sh.note || null,
+    }))).filter(x => x.day >= 0 && x.day <= 6);
+    if (!shifts.length) { showToast('Aucun créneau à enregistrer cette semaine'); return; }
+    setTplBusy(true);
+    const { error } = await supabase.from('week_templates').insert({ name, service, shifts });
+    setTplBusy(false);
+    if (error) { showToast('Erreur : ' + error.message); return; }
+    showToast('Modèle « ' + name + ' » enregistré (' + shifts.length + ' créneaux)');
+    setTplName('');
+    const { data } = await supabase.from('week_templates').select('*').eq('service', service).order('name');
+    setTemplates(data || []);
+  }
+
+  // Applique un modele a la semaine affichee : saute les absences acceptees, ignore les doublons
+  async function applyTemplate(tpl) {
+    const known = new Set(employees.map(e => e.id));
+    const list = (tpl.shifts || []).filter(x => known.has(x.employee_id));
+    const empIds = [...new Set(list.map(x => x.employee_id))];
+    if (!list.length) { showToast('Ce modèle ne concerne aucun salarié actuel'); return; }
+    if (tplReplace && !window.confirm('Vider d\'abord la semaine affichée pour les ' + empIds.length + ' salarié(s) du modèle ?\nLeurs créneaux actuels de cette semaine seront supprimés.')) return;
+    setTplBusy(true);
+    try {
+      if (tplReplace) await axios.post(API + '/schedules/clear', { week: fmtDate(mon), employee_ids: empIds });
+      let absentSkipped = 0;
+      const toCreate = list.map(x => ({ ...x, work_date: fmtDate(addDays(mon, x.day)) })).filter(x => {
+        const absent = x.shift_type !== 'repos' && absences.some(a => a.employee_id === x.employee_id && a.status === 'acceptee' && absenceCovers(a, x.work_date));
+        if (absent) absentSkipped++;
+        return !absent;
+      }).map(({ day, ...rest }) => rest);
+      const r = await axios.post(API + '/schedules/bulk', { shifts: toCreate });
+      await loadShifts();
+      setModal(null);
+      showToast(r.data.created + ' créneau(x) créé(s)' + (r.data.skipped ? ' · ' + r.data.skipped + ' déjà existant(s)' : '') + (absentSkipped ? ' · ' + absentSkipped + ' ignoré(s) (absence)' : ''));
+    } catch (err) {
+      showToast('Erreur : ' + (err.response?.data?.error || err.message));
+    } finally { setTplBusy(false); }
+  }
+
+  async function deleteTemplate(tpl) {
+    if (!window.confirm('Supprimer le modèle « ' + tpl.name + ' » ?')) return;
+    const { error } = await supabase.from('week_templates').delete().eq('id', tpl.id);
+    if (error) { showToast('Erreur : ' + error.message); return; }
+    setTemplates(t => t.filter(x => x.id !== tpl.id));
+  }
+
   async function moveEmp(fromIdx, toIdx) {
     const newList = [...allInService];
     const [moved] = newList.splice(fromIdx, 1);
@@ -419,6 +484,7 @@ export default function Planning() {
           <button onClick={()=>setWeekOffset(0)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.muted,cursor:'pointer',padding:'4px 10px',fontSize:'11px',fontFamily:'inherit'}}>Auj.</button>
           <button onClick={()=>setModal('manage')} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 12px',color:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} title="Gerer les equipiers">⚙️</button>
           <button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
+          <button onClick={openTemplates} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}} title="Modèles de semaine">📋 Modèles</button>
           <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>{exportingPDF?'...':'↓ PDF'}</button>
           <button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>
         </div>
@@ -712,6 +778,45 @@ export default function Planning() {
               <button onClick={()=>setModal('manage')} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>
               <button onClick={addTempEmployee} style={{flex:1,background:C.purple,border:'none',borderRadius:'6px',padding:'8px',color:'#fff',cursor:'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>Ajouter</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal modeles de semaine */}
+      {modal==='templates'&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:'20px'}} onClick={()=>!tplBusy&&setModal(null)}>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'420px',maxHeight:'85vh',overflowY:'auto',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'14px',fontWeight:600,marginBottom:'2px',color:C.text}}>📋 Modèles de semaine · {service}</div>
+            <div style={{fontSize:'11px',color:C.muted,marginBottom:'16px'}}>Semaine affichée : {weekLabel}</div>
+
+            <div style={{fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'6px'}}>ENREGISTRER CETTE SEMAINE COMME MODÈLE</div>
+            <div style={{display:'flex',gap:'6px',marginBottom:'18px'}}>
+              <input style={{...inp,flex:1}} placeholder="Ex : Haute saison" value={tplName} onChange={e=>setTplName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveTemplate()}/>
+              <button onClick={saveTemplate} disabled={tplBusy} style={{background:C.purple,border:'none',borderRadius:'6px',padding:'6px 12px',color:'#fff',fontSize:'11px',fontFamily:'inherit',fontWeight:600,cursor:'pointer',opacity:tplBusy?0.6:1}}>Enregistrer</button>
+            </div>
+
+            <div style={{fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'6px'}}>APPLIQUER À LA SEMAINE AFFICHÉE</div>
+            <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'11px',color:C.text,marginBottom:'10px',cursor:'pointer'}}>
+              <input type="checkbox" checked={tplReplace} onChange={e=>setTplReplace(e.target.checked)}/> Vider d'abord la semaine des salariés concernés (sinon : ajout aux créneaux existants)
+            </label>
+            {templates.length===0?(
+              <div style={{fontSize:'12px',color:C.muted,textAlign:'center',padding:'14px'}}>Aucun modèle pour ce service</div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                {templates.map(t=>(
+                  <div key={t.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:C.bg,border:'1px solid '+C.border,borderRadius:'8px'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'12px',fontWeight:500,color:C.text}}>{t.name}</div>
+                      <div style={{fontSize:'10px',color:C.muted}}>{(t.shifts||[]).length} créneaux · {new Set((t.shifts||[]).map(x=>x.employee_id)).size} salarié(s)</div>
+                    </div>
+                    <button onClick={()=>applyTemplate(t)} disabled={tplBusy} style={{background:C.green,border:'none',borderRadius:'6px',padding:'5px 10px',color:'#fff',fontSize:'11px',fontFamily:'inherit',fontWeight:600,cursor:'pointer',opacity:tplBusy?0.6:1}}>{tplBusy?'...':'Appliquer'}</button>
+                    <button onClick={()=>deleteTemplate(t)} disabled={tplBusy} title="Supprimer le modèle" style={{background:'none',border:'none',cursor:'pointer',fontSize:'13px'}}>🗑️</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{fontSize:'10px',color:C.muted,marginTop:'12px',lineHeight:1.5}}>Les jours d'absence acceptée sont sautés et les créneaux déjà présents ne sont pas dupliqués. Les contrôles légaux s'appliquent ensuite dans le planning.</div>
+            <button onClick={()=>setModal(null)} disabled={tplBusy} style={{width:'100%',marginTop:'14px',background:'none',border:'1px solid '+C.border,borderRadius:'8px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Fermer</button>
           </div>
         </div>
       )}

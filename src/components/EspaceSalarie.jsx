@@ -28,6 +28,7 @@ const SHIFTS = [
   { id: 'soir', label: 'Soir', bg: '#FEF2F2', border: '#E85D5D', text: '#991B1B' },
   { id: 'custom', label: 'Personnalise', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
   { id: 'repos', label: 'Repos', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },
+  { id: 'recup', label: 'Récup', bg: '#ECFEFF', border: '#0891B2', text: '#155E75' },
 ];
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const months = ['jan','fev','mars','avr','mai','juin','juil','aout','sep','oct','nov','dec'];
@@ -56,12 +57,16 @@ export default function EspaceSalarie({ profile }) {
   const [tabBadges,setTabBadges]=useState({});
   // Heures modulees validees par le manager (periode de modulation en cours : 1er nov -> 31 oct)
   const [modulees,setModulees]=useState([]);
+  const [recupMin,setRecupMin]=useState(0); // heures de recuperation prises sur la periode (jusqu'a aujourd'hui)
   useEffect(()=>{
     if(tab!=='heures'||!selectedEmp)return;
     const now=new Date();const y=now.getMonth()>=10?now.getFullYear():now.getFullYear()-1;
     supabase.from('payroll_months').select('month, overtime_paid, overtime_banked').eq('employee_id',selectedEmp.id)
       .gte('month',y+'-11').lte('month',(y+1)+'-10').order('month')
       .then(({data})=>setModulees(data||[]));
+    supabase.from('schedules').select('start_time, end_time, break_minutes').eq('employee_id',selectedEmp.id).eq('shift_type','recup')
+      .gte('work_date',y+'-11-01').lte('work_date',fmtDate(new Date()))
+      .then(({data})=>setRecupMin((data||[]).reduce((n,s)=>{const[a,b]=String(s.start_time).slice(0,5).split(':').map(Number);const[c,d]=String(s.end_time).slice(0,5).split(':').map(Number);let m=c*60+d-a*60-b;if(m<=0)m+=1440;return n+Math.max(0,m-(parseInt(s.break_minutes,10)||0));},0)));
   },[tab,selectedEmp]);
   const [weekAbsences,setWeekAbsences]=useState([]); // absences acceptees ou en attente de la semaine affichee
   useEffect(()=>{
@@ -154,7 +159,7 @@ export default function EspaceSalarie({ profile }) {
   function getShiftsForDay(dayIdx){const date=fmtDate(addDays(mon,dayIdx));return shifts.filter(s=>s.work_date&&s.work_date.slice(0,10)===date).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''));}
   function getNextShift(){const today=new Date();today.setHours(0,0,0,0);for(let i=0;i<14;i++){const d=addDays(today,i);const date=fmtDate(d);const found=shifts.filter(s=>s.work_date&&s.work_date.slice(0,10)===date&&s.shift_type!=='repos').sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''))[0];if(found)return{shift:found,date:d,daysAway:i};}return null;}
   // Heures nettes de la semaine : pauses deduites, creneau apres minuit gere (meme calcul que le planning manager)
-  function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time||s.shift_type==='repos')return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);let mins=eh*60+em-sh*60-sm;if(mins<0)mins+=24*60;return t+Math.max(0,mins-parseInt(s.break_minutes||0))/60;},0);}
+  function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time||s.shift_type==='repos'||s.shift_type==='recup')return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);let mins=eh*60+em-sh*60-sm;if(mins<0)mins+=24*60;return t+Math.max(0,mins-parseInt(s.break_minutes||0))/60;},0);}
 
   async function exportPDF() {
     if (!planningRef.current) return;
@@ -190,10 +195,10 @@ export default function EspaceSalarie({ profile }) {
   const inp={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'8px 10px',color:C.text,fontSize:'13px',fontFamily:'inherit',boxSizing:'border-box'};
 
   return(
-    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace"}}>
+    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"}}>
       <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'16px 20px',boxShadow:C.shadow+' 0 1px 4px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'10px'}}>
-          <div style={{fontSize:'13px',fontWeight:600,color:C.text}}><span style={{color:C.purple}}>▸</span> MON PLANNING</div>
+          <div style={{fontSize:'13px',fontWeight:600,color:C.text}}>Mon planning</div>
           {isManager&&(
             <select style={{...inp,width:'auto',fontSize:'12px',padding:'5px 10px'}} value={selectedEmp.id} onChange={e=>setSelectedEmp(employees.find(em=>em.id===e.target.value))}>
               {employees.map(emp=><option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>)}
@@ -368,7 +373,7 @@ export default function EspaceSalarie({ profile }) {
               return(
                 <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'12px',boxShadow:C.shadow+' 0 2px 8px'}}>
                   <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'12px'}}>COMPTEUR D'HEURES MODULÉES</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:modulees.length?'12px':'0'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:'12px',marginBottom:modulees.length?'12px':'0'}}>
                     <div style={{textAlign:'center',padding:'12px',background:C.purpleLight,border:'1px solid '+C.purple+'44',borderRadius:'8px'}}>
                       <div style={{fontSize:'22px',fontWeight:600,color:C.purple}}>{fmt(banked)}</div>
                       <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>reportées au compteur</div>
@@ -376,6 +381,14 @@ export default function EspaceSalarie({ profile }) {
                     <div style={{textAlign:'center',padding:'12px',background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:'8px'}}>
                       <div style={{fontSize:'22px',fontWeight:600,color:C.green}}>{fmt(paid)}</div>
                       <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>payées</div>
+                    </div>
+                    <div style={{textAlign:'center',padding:'12px',background:'#ECFEFF',border:'1px solid #0891B244',borderRadius:'8px'}}>
+                      <div style={{fontSize:'22px',fontWeight:600,color:'#0891B2'}}>{fmt(recupMin/60)}</div>
+                      <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>récupérées</div>
+                    </div>
+                    <div style={{textAlign:'center',padding:'12px',background:C.bg,border:'1px solid '+C.border,borderRadius:'8px'}}>
+                      <div style={{fontSize:'22px',fontWeight:600,color:C.text}}>{fmt(banked-recupMin/60)}</div>
+                      <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>solde au compteur</div>
                     </div>
                   </div>
                   {modulees.length>0?(

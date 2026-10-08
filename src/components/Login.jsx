@@ -41,11 +41,11 @@ export default function Login({ onLogin }) {
   const inp = { width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px 12px', color: C.text, fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box' };
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", padding: '20px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '20px' }}>
       <div style={{ width: '100%', maxWidth: '360px' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <div style={{ fontSize: '20px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>
-            <span style={{ color: C.purple }}>▸</span> PLANNING HPA
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span></span>
           </div>
           <div style={{ fontSize: '12px', color: C.muted }}>Hotellerie de Plein Air · IDCC 1631</div>
         </div>

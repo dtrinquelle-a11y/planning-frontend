@@ -78,7 +78,7 @@ export default function HelpPanel({ isAdmin }) {
       </button>
 
       {open && (
-        <div style={{ position: 'fixed', bottom: '72px', left: '24px', width: '380px', maxHeight: '70vh', background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', boxShadow: '0 8px 32px ' + C.shadow, zIndex: 299, display: 'flex', flexDirection: 'column', fontFamily: "'DM Mono','Courier New',monospace", overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', bottom: '72px', left: '24px', width: '380px', maxHeight: '70vh', background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', boxShadow: '0 8px 32px ' + C.shadow, zIndex: 299, display: 'flex', flexDirection: 'column', fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", overflow: 'hidden' }}>
 
           <div style={{ padding: '14px 16px', borderBottom: '1px solid ' + C.border, background: C.purpleLight }}>
             <div style={{ fontSize: '13px', fontWeight: 600, color: C.purple }}>▸ Planning HPA</div>

@@ -81,7 +81,7 @@ export default function Realise() {
   const cell = { padding: '6px', borderBottom: '1px solid ' + C.border + '88', borderLeft: '1px solid ' + C.border + '55', verticalAlign: 'top', fontSize: '11px', minWidth: '96px' };
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace", padding: '24px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '24px' }}>
       <div style={{ maxWidth: '1300px', margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
           <div>

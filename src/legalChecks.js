@@ -5,7 +5,7 @@
 // - au plus 6 jours travailles par semaine (L3132-1)
 // - repos hebdomadaire d'au moins 35 h consecutives (L3132-2)
 // - au plus 48 h de travail sur la semaine (L3121-20)
-// Les creneaux "repos" sont ignores. Un creneau dont la fin est avant le debut se termine le lendemain.
+// Les creneaux "repos" et "recup" (recuperation, non travaillee) sont ignores. Un creneau dont la fin est avant le debut se termine le lendemain.
 
 const DAY_NAMES = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
 const H = 3600 * 1000;
@@ -28,7 +28,7 @@ export function checkEmployeeWeek(shifts, weekStart) {
   const wStart = new Date(weekStart + 'T00:00:00');
   const wEnd = new Date(wStart.getTime() + 7 * 24 * H);
   const all = shifts
-    .filter(s => s.start_time && s.end_time && s.shift_type !== 'repos')
+    .filter(s => s.start_time && s.end_time && s.shift_type !== 'repos' && s.shift_type !== 'recup')
     .map(toInterval)
     .sort((a, b) => a.start - b.start);
   const inWeek = all.filter(i => i.start >= wStart && i.start < wEnd);

@@ -98,7 +98,7 @@ export default function Absences() {
   const inp = { width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 10px', color: C.text, fontSize: '12px', fontFamily: 'inherit', boxSizing: 'border-box' };
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace", padding: '24px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '24px' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
         <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.1em', marginBottom: '4px' }}>ÉQUIPE</div>
         <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '18px' }}>Absences et congés</div>

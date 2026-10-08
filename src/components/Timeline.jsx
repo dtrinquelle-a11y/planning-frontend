@@ -176,7 +176,7 @@ export default function Timeline() {
   }
 
   return(
-    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace"}}>
+    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"}}>
       <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'14px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px',boxShadow:C.shadow+' 0 1px 4px'}}>
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
           <span style={{fontSize:'11px',color:C.muted,marginRight:'4px'}}>SERVICE</span>

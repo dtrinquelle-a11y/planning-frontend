@@ -1,17 +1,17 @@
 import React, { createContext, useContext, useState } from 'react';
 
 const DARK = {
-  bg: '#0F1117', card: '#1A1D27', border: '#2A2D3A', borderLight: '#1E2130',
-  text: '#E8E6DC', muted: '#6B6E82', purple: '#7C6FCD', green: '#2DB87A',
-  amber: '#F5A623', red: '#E85D5D', purpleLight: '#2A1F4A', greenLight: '#1A3A2A',
-  amberLight: '#3A2A10', redLight: '#3A1A1A', shadow: 'rgba(0,0,0,0.3)',
+  bg: '#0B0D12', card: '#151821', border: '#262A36', borderLight: '#1C1F2A',
+  text: '#E5E7EB', muted: '#8B90A0', purple: '#8B80F0', green: '#34D399',
+  amber: '#FBBF24', red: '#F87171', purpleLight: '#24204A', greenLight: '#0F2E24',
+  amberLight: '#33270C', redLight: '#3A1717', shadow: 'rgba(0,0,0,0.35)',
 };
 
 const LIGHT = {
-  bg: '#FFFFFF', card: '#FFFFFF', border: '#E2E5ED', borderLight: '#F0F2F7',
-  text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD', green: '#16A34A',
-  amber: '#D97706', red: '#DC2626', purpleLight: '#EEF2FF', greenLight: '#F0FDF4',
-  amberLight: '#FFFBEB', redLight: '#FEF2F2', shadow: 'rgba(0,0,0,0.08)',
+  bg: '#F5F6FA', card: '#FFFFFF', border: '#E5E7EF', borderLight: '#EEF0F5',
+  text: '#111827', muted: '#6B7280', purple: '#5B4FD6', green: '#16A34A',
+  amber: '#D97706', red: '#DC2626', purpleLight: '#EEF0FF', greenLight: '#ECFDF3',
+  amberLight: '#FFF8EB', redLight: '#FEF2F2', shadow: 'rgba(17,24,39,0.06)',
 };
 
 const ThemeContext = createContext({ colors: DARK, darkMode: true, toggle: () => {} });

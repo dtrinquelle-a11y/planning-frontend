@@ -48,7 +48,7 @@ export default function Dashboard() {
   }, []);
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", color: C.muted, fontSize: '13px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", color: C.muted, fontSize: '13px' }}>
       CHARGEMENT...
     </div>
   );
@@ -87,10 +87,10 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace" }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" }}>
       <div style={{ borderBottom: '1px solid ' + C.border, padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.card }}>
         <div style={{ fontSize: '16px', fontWeight: 600, color: C.text, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ color: C.purple }}>▸</span> PLANNING HPA
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span></span>
           <span style={{ color: C.muted, fontWeight: 400, fontSize: '13px' }}>/ Management</span>
         </div>
         <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>

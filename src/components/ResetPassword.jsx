@@ -3,7 +3,7 @@ import supabase from '../supabase';
 
 // Page /reinitialiser : ouverte depuis le lien de l'email "mot de passe oublie".
 // Supabase lit le jeton present dans l'URL et ouvre une session de recuperation.
-const C = { bg: '#F4F6FA', card: '#FFFFFF', border: '#E2E5ED', text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD', green: '#16A34A', red: '#DC2626', redLight: '#FEF2F2', greenLight: '#F0FDF4' };
+const C = { bg: '#F5F6FA', card: '#FFFFFF', border: '#E5E7EF', text: '#111827', muted: '#6B7280', purple: '#5B4FD6', green: '#16A34A', red: '#DC2626', redLight: '#FEF2F2', greenLight: '#F0FDF4' };
 const inp = { width: '100%', background: C.bg, border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px 12px', color: C.text, fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box' };
 const lbl = { display: 'block', fontSize: '10px', color: C.muted, letterSpacing: '0.08em', marginBottom: '5px' };
 
@@ -48,10 +48,10 @@ export default function ResetPassword() {
   const btn = { width: '100%', background: C.purple, border: 'none', borderRadius: '8px', padding: '10px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', textAlign: 'center', textDecoration: 'none', display: 'block', boxSizing: 'border-box' };
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", padding: '20px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '20px' }}>
       <div style={{ width: '100%', maxWidth: '360px' }}>
         <div style={{ textAlign: 'center', marginBottom: '28px', fontSize: '20px', fontWeight: 600, color: C.text }}>
-          <span style={{ color: C.purple }}>▸</span> PLANNING HPA
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span></span>
         </div>
 
         {status === 'checking' && <div style={{ ...card, textAlign: 'center', color: C.muted, fontSize: '13px' }}>Verification du lien...</div>}

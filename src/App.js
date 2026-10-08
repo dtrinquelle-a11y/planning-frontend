@@ -165,7 +165,7 @@ function AppInner() {
   if (isReset) return <ResetPassword />;
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono','Courier New',monospace", gap: '16px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", gap: '16px' }}>
       <div style={{ color: C.muted, fontSize: '13px' }}>{loadingMsg}</div>
       <div style={{ display: 'flex', gap: '6px' }}>
         {[0,1,2].map(i => (
@@ -203,19 +203,22 @@ function AppInner() {
       ];
 
   return (
-    <div style={{ fontFamily: "'DM Mono','Courier New',monospace", background: C.bg, minHeight: '100vh' }}>
-      <nav style={{ background: C.card, borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', boxShadow: C.shadow + ' 0 1px 4px' }}>
-        <span style={{ color: C.purple, fontWeight: 600, marginRight: '16px', fontSize: '13px' }}>▸ PLANNING HPA</span>
+    <div style={{ fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", background: C.bg, minHeight: '100vh' }}>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.85)' : 'rgba(255,255,255,0.85)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '18px' }}>
+          <span style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, letterSpacing: '0.02em', boxShadow: '0 2px 6px rgba(79,70,229,0.35)' }}>HPA</span>
+          <span style={{ color: C.text, fontWeight: 700, fontSize: '14px', letterSpacing: '-0.01em' }}>Planning</span>
+        </span>
         {navItems.map(p => (
-          <button key={p.id} onClick={() => setPage(p.id)}
-            style={{ position: 'relative', padding: '6px 12px', borderRadius: '8px', border: 'none', background: page === p.id ? C.purple : 'transparent', color: page === p.id ? '#fff' : C.muted, cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
+          <button key={p.id} onClick={() => setPage(p.id)} className={page === p.id ? undefined : 'nav-tab'}
+            style={{ position: 'relative', padding: '7px 12px', borderRadius: '999px', border: 'none', background: page === p.id ? C.purpleLight : 'transparent', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontWeight: page === p.id ? 600 : 500, fontFamily: 'inherit' }}
           >{p.label}<Badge count={isManager ? (p.id === 'absences' ? badges.absences : p.id === 'dossiers' ? badges.dossiers : 0) : (p.id === 'salarie' ? badges.salarie : 0)} /></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button onClick={toggle} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: C.muted }}>{darkMode ? '☀️' : '🌙'}</button>
           {empName && <span style={{ fontSize: '12px', color: C.muted }}>{empName}</span>}
           <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: C.muted }}>Confidentialité</a>
-          <button onClick={handleLogout} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid ' + C.border, background: 'none', color: C.muted, cursor: 'pointer', fontSize: '11px' }}>Déconnexion</button>
+          <button onClick={handleLogout} style={{ padding: '6px 12px', borderRadius: '999px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '12px', fontWeight: 500, fontFamily: 'inherit' }}>Déconnexion</button>
         </div>
       </nav>
       <div style={{ padding: '0' }}>

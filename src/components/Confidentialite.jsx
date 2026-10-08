@@ -8,17 +8,17 @@ const RESPONSABLE = {
 };
 const MISE_A_JOUR = '5 octobre 2026';
 
-const C = { bg: '#F4F6FA', card: '#FFFFFF', border: '#E2E5ED', text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD' };
+const C = { bg: '#F5F6FA', card: '#FFFFFF', border: '#E5E7EF', text: '#111827', muted: '#6B7280', purple: '#5B4FD6' };
 const h2 = { fontSize: '15px', fontWeight: 600, color: C.text, margin: '24px 0 8px' };
 const p = { fontSize: '13px', color: C.text, lineHeight: 1.7, margin: '0 0 8px' };
 const li = { fontSize: '13px', color: C.text, lineHeight: 1.7 };
 
 export default function Confidentialite() {
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Mono','Courier New',monospace", padding: '20px', display: 'flex', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '20px', display: 'flex', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: '720px' }}>
         <div style={{ textAlign: 'center', margin: '20px 0 24px' }}>
-          <div style={{ fontSize: '20px', fontWeight: 600, color: C.text }}><span style={{ color: C.purple }}>▸</span> PLANNING HPA</div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: C.text }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span></span></div>
           <div style={{ fontSize: '12px', color: C.muted, marginTop: '6px' }}>Politique de confidentialité · mise à jour le {MISE_A_JOUR}</div>
         </div>
 

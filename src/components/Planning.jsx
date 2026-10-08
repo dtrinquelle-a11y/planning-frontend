@@ -18,6 +18,8 @@ const DEFAULT_SHIFTS = [
   { id: 'soir', label: 'Soir', start: '18:00', end: '23:30', bg: '#FEF2F2', border: '#E85D5D', text: '#991B1B' },
   { id: 'custom', label: 'Personnalise', start: '08:00', end: '16:00', bg: '#EFF6FF', border: '#3B82F6', text: '#1E40AF' },
   { id: 'repos', label: 'Repos', start: '00:00', end: '00:00', bg: '#F3F4F6', border: '#9CA3AF', text: '#6B7280' },
+  // Recuperation : heures non travaillees, decomptees a part (export paie, compteur de modulation)
+  { id: 'recup', label: 'Récup', start: '14:00', end: '18:00', bg: '#ECFEFF', border: '#0891B2', text: '#155E75' },
 ];
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
@@ -39,7 +41,7 @@ function calcPauseHPA(totalMinutes) {
 }
 
 function calcShiftH(s) {
-  if (!s.start_time || !s.end_time || s.shift_type === 'repos') return 0;
+  if (!s.start_time || !s.end_time || s.shift_type === 'repos' || s.shift_type === 'recup') return 0;
   const [sh,sm] = s.start_time.slice(0,5).split(':').map(Number);
   const [eh,em] = s.end_time.slice(0,5).split(':').map(Number);
   const brk = parseInt(s.break_minutes || 0);
@@ -120,6 +122,7 @@ export default function Planning() {
         if (!merged.find(s => s.id === 'repos')) {
           merged.push(DEFAULT_SHIFTS.find(s => s.id === 'repos'));
         }
+        if (!merged.find(s => s.id === 'recup')) merged.push(DEFAULT_SHIFTS.find(s => s.id === 'recup'));
         setDbShifts(merged);
       }
     } catch {}
@@ -469,7 +472,7 @@ export default function Planning() {
   const lbl={display:'block',fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'};
 
   return (
-    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace"}}>
+    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"}}>
       {/* Barre nav */}
       <div style={{borderBottom:'1px solid '+C.border,padding:'14px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',background:C.card,flexWrap:'wrap',gap:'10px'}}>
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
@@ -642,7 +645,7 @@ export default function Planning() {
                       <label style={lbl}>DEBUT</label>
                       <input type="time" style={inp} value={form.start} onChange={e=>{
                         const auto=calcAutoBreak(e.target.value,form.end);
-                        setForm(f=>({...f,start:e.target.value,breakMinutes:auto}));
+                        setForm(f=>({...f,start:e.target.value,breakMinutes:f.shiftId==='recup'?0:auto}));
                       }}/>
                       {/* Valeur par défaut en gris */}
                       {defaultShift && form.start !== defaultShift.start && (
@@ -653,7 +656,7 @@ export default function Planning() {
                       <label style={lbl}>FIN</label>
                       <input type="time" style={inp} value={form.end} onChange={e=>{
                         const auto=calcAutoBreak(form.start,e.target.value);
-                        setForm(f=>({...f,end:e.target.value,breakMinutes:auto}));
+                        setForm(f=>({...f,end:e.target.value,breakMinutes:f.shiftId==='recup'?0:auto}));
                       }}/>
                       {defaultShift && form.end !== defaultShift.end && (
                         <div style={{fontSize:'9px',color:C.muted,marginTop:'2px',fontStyle:'italic'}}>Défaut: {defaultShift.end}</div>

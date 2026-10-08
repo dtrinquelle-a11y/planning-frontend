@@ -152,7 +152,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
   const timeStr = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
 
   return (
-    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace",padding:'20px',display:'flex',flexDirection:'column',alignItems:'center'}}>
+    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",padding:'20px',display:'flex',flexDirection:'column',alignItems:'center'}}>
       <canvas ref={canvasRef} style={{display:'none'}}/>
 
       {step === 'main' && (

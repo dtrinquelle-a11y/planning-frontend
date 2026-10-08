@@ -62,7 +62,7 @@ export default function GED({ profile, isManager: isManagerProp }) {
   const lbl={display:'block',fontSize:'10px',color:C.muted,letterSpacing:'0.08em',marginBottom:'4px'};
 
   return(
-    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'DM Mono','Courier New',monospace",padding:'24px'}}>
+    <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",padding:'24px'}}>
       <div style={{maxWidth:'900px',margin:'0 auto'}}>
         <div style={{marginBottom:'20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px'}}>
           <div><div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.1em',marginBottom:'4px'}}>GED</div><div style={{fontSize:'18px',fontWeight:600,color:C.text}}>Documents RH</div></div>

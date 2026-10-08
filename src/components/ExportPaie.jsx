@@ -37,6 +37,9 @@ const COLUMNS = [
   ['HS modulees payees', r => num(r.val.paid)],
   ['HS modulees reportees au compteur', r => num(r.val.banked)],
   ['Cumul reporte sur la periode de modulation', r => num(r.cumulBanked)],
+  ['Recuperation prise ce mois (h)', r => num(r.recup_heures)],
+  ['Recuperation prise sur la periode (h)', r => num(r.recup_cumul_periode)],
+  ['Solde heures modulees (reporte - recupere)', r => num(Math.round((r.cumulBanked - r.recup_cumul_periode) * 100) / 100)],
   ['Detail par semaine', r => r.semaines.map(w => 'sem. du ' + w.monday.slice(8, 10) + '/' + w.monday.slice(5, 7) + ' : ' + num(w.heures) + ' h').join(' | ')],
   ['Dimanches (jours)', r => r.dimanches_jours], ['Dimanches (heures)', r => num(r.dimanches_heures)],
   ['Feries (jours)', r => r.feries_jours], ['Feries (heures)', r => num(r.feries_heures)],
@@ -147,7 +150,7 @@ export default function ExportPaie() {
   }), { planif: 0, dela: 0, dim: 0, fer: 0, cp: 0, mal: 0 }) : null;
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'DM Mono','Courier New',monospace", padding: '24px' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '24px' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
           <div>
@@ -201,7 +204,7 @@ export default function ExportPaie() {
                 <tr>
                   <th style={{ ...th, textAlign: 'left' }}>Salarié</th>
                   <th style={th}>Contrat</th><th style={th}>Planifié</th><th style={th}>Réalisé</th><th style={th}>Au-delà contrat</th>
-                  <th style={th}>HS payées</th><th style={th}>HS reportées</th>
+                  <th style={th}>HS payées</th><th style={th}>HS reportées</th><th style={th}>Récup</th>
                   <th style={th}>Dim.</th><th style={th}>Fériés</th>
                   <th style={th}>CP</th><th style={th}>Maladie</th><th style={th}>Ss solde</th><th style={th}>Autres abs.</th>
                   <th style={th}>Retards</th><th style={th}>Modulation</th>
@@ -230,6 +233,7 @@ export default function ExportPaie() {
                         {f === 'banked' && cumul[r.employee_id] ? <div style={{ fontSize: '9px', color: C.muted }}>cumul période : {String(Math.round((cumul[r.employee_id] + (Number(vals[r.employee_id]?.banked) || 0)) * 100) / 100).replace('.', ',')} h</div> : null}
                       </td>
                     ))}
+                    <td style={td} title={'Récupération prise sur la période : ' + num(r.recup_cumul_periode) + ' h'}>{r.recup_heures ? fmtH(r.recup_heures) : '—'}</td>
                     <td style={td}>{r.dimanches_jours ? r.dimanches_jours + ' j · ' + fmtH(r.dimanches_heures) : '—'}</td>
                     <td style={td}>{r.feries_jours ? r.feries_jours + ' j · ' + fmtH(r.feries_heures) : '—'}</td>
                     <td style={td}>{r.abs.conge_paye || '—'}</td>

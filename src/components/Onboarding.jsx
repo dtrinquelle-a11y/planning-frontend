@@ -39,8 +39,8 @@ function withTimeout(promise, ms = 15000) {
 }
 
 const C = {
-  bg: '#F4F6FA', card: '#FFFFFF', border: '#E2E5ED',
-  text: '#1A1D27', muted: '#6B7280', purple: '#6C5FCD',
+  bg: '#F5F6FA', card: '#FFFFFF', border: '#E5E7EF',
+  text: '#111827', muted: '#6B7280', purple: '#5B4FD6',
   green: '#16A34A', amber: '#D97706', red: '#DC2626',
   purpleLight: '#EEF2FF', greenLight: '#F0FDF4', redLight: '#FEF2F2',
 };
@@ -241,12 +241,12 @@ export default function Onboarding() {
   const signatureFields = fields.filter(f => isVisible(f) && f.field_type === 'signature');
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Mono','Courier New',monospace", padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ width: '100%', maxWidth: '560px' }}>
 
         <div style={{ textAlign: 'center', marginBottom: '28px', paddingTop: '20px' }}>
           <div style={{ fontSize: '20px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>
-            <span style={{ color: C.purple }}>▸</span> PLANNING HPA
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span></span>
           </div>
           <div style={{ fontSize: '12px', color: C.muted }}>Le Bout du Monde · {ACCESS_TOKEN ? 'Premier accès' : "Dossier d'embauche"}</div>
         </div>

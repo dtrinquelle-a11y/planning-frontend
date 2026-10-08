@@ -59,6 +59,7 @@ export default function Parametrage() {
     { id: 'geoloc', label: '📍 Géoloc', icon: '📍' },
     { id: 'cc_hpa', label: '⚖️ CC HPA', icon: '⚖️' },
     { id: 'pointeuse', label: '📷 Pointeuse', icon: '📷' },
+    { id: 'conges', label: '🏖️ Congés payés', icon: '🏖️' },
     { id: 'sauvegardes', label: '💾 Sauvegardes', icon: '💾' },
   ];
 
@@ -272,8 +273,62 @@ export default function Parametrage() {
                 </div>
               )}
 
-              {/* POINTEUSE */}
               {section === 'sauvegardes' && <Sauvegardes />}
+
+              {/* CONGES PAYES : periodes ou les salaries ne peuvent pas poser de CP */}
+              {section === 'conges' && (() => {
+                const periods = settings.cp_blackout || [];
+                const setPeriods = list => setSettings(prev => ({ ...prev, cp_blackout: list }));
+                const update = (i, patch) => setPeriods(periods.map((p, j) => j === i ? { ...p, ...patch } : p));
+                const invalid = periods.some(p => !p.start || !p.end || p.end < p.start);
+                return (
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Congés payés</div>
+                    <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px', lineHeight: 1.6 }}>
+                      Périodes pendant lesquelles les salariés ne peuvent pas demander de congés payés (haute saison, ouverture…).
+                      Elles sont affichées dans leur formulaire de demande. Vous pouvez toujours accorder vous-même un congé sur ces périodes.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {periods.length === 0 && (
+                        <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px', textAlign: 'center', color: C.muted, fontSize: '12px' }}>
+                          Aucune période : les congés payés peuvent être demandés toute l'année.
+                        </div>
+                      )}
+                      {periods.map((p, i) => (
+                        <div key={i} style={{ background: C.card, border: '1px solid ' + C.border, borderLeft: '4px solid ' + C.red, borderRadius: '10px', padding: '14px', display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr auto', gap: '10px', alignItems: 'end' }}>
+                          <div>
+                            <label style={lbl}>DU</label>
+                            <input type="date" style={inp} value={p.start || ''} onChange={e => update(i, { start: e.target.value })} />
+                          </div>
+                          <div>
+                            <label style={lbl}>AU (INCLUS)</label>
+                            <input type="date" style={inp} value={p.end || ''} min={p.start || undefined} onChange={e => update(i, { end: e.target.value })} />
+                          </div>
+                          <div>
+                            <label style={lbl}>MOTIF (FACULTATIF)</label>
+                            <input style={inp} placeholder="Ex : haute saison" value={p.label || ''} onChange={e => update(i, { label: e.target.value })} />
+                          </div>
+                          <button onClick={() => setPeriods(periods.filter((_, j) => j !== i))} title="Supprimer"
+                            style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '8px 10px', color: C.red, cursor: 'pointer', fontFamily: 'inherit', fontSize: '12px' }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => setPeriods([...periods, { start: '', end: '', label: '' }])}
+                      style={{ marginTop: '12px', background: C.card, border: '1px dashed ' + C.border, borderRadius: '8px', padding: '9px 16px', color: C.text, fontSize: '12px', fontFamily: 'inherit', cursor: 'pointer' }}>
+                      + Ajouter une période
+                    </button>
+                    {invalid && <div style={{ marginTop: '10px', fontSize: '12px', color: C.red }}>Chaque période doit avoir une date de début et une date de fin (après le début).</div>}
+                    <div>
+                      <button onClick={() => saveSetting('cp_blackout', [...periods].sort((a, b) => a.start.localeCompare(b.start)))} disabled={saving || invalid}
+                        style={{ marginTop: '20px', background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 24px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: saving || invalid ? 'not-allowed' : 'pointer', opacity: saving || invalid ? 0.7 : 1 }}>
+                        {saving ? 'Sauvegarde...' : '💾 Sauvegarder'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* POINTEUSE */}
 
               {section === 'pointeuse' && (
                 <div>

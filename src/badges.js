@@ -1,5 +1,6 @@
 import React from 'react';
 import supabase from './supabase';
+import { countDocsToSign } from './signatures';
 
 // Pastilles "elements a traiter" (style iPhone) sur les onglets.
 // Manager : demandes d'absence en attente, dossiers d'onboarding a valider.
@@ -28,14 +29,15 @@ export async function fetchManagerBadges() {
 }
 
 export async function fetchEmployeeBadges(empId) {
-  if (!empId) return { absences: 0, documents: 0 };
-  const [abs, docs] = await Promise.all([
+  if (!empId) return { absences: 0, documents: 0, signer: 0 };
+  const [abs, docs, signer] = await Promise.all([
     supabase.from('absence_requests').select('id', { count: 'exact', head: true })
       .eq('employee_id', empId).neq('status', 'en_attente').not('decided_at', 'is', null).gt('decided_at', getSeen('absences', empId)),
     supabase.from('documents').select('id', { count: 'exact', head: true })
       .eq('employee_id', empId).gt('created_at', getSeen('documents', empId)),
+    countDocsToSign(empId).catch(() => 0),
   ]);
-  return { absences: abs.count || 0, documents: docs.count || 0 };
+  return { absences: abs.count || 0, documents: docs.count || 0, signer };
 }
 
 // Pastille rouge avec le nombre (rien si 0)

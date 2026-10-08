@@ -9,7 +9,7 @@ import Planning from './components/Planning';
 import EspaceSalarie from './components/EspaceSalarie';
 import Pointeuse from './components/Pointeuse';
 import QRCodePage from './components/QRCodePage';
-import GED from './components/GED';
+import DocumentsPage from './components/DocumentsPage';
 import Timeline from './components/Timeline';
 import Onboarding from './components/Onboarding';
 import DossiersRH from './components/DossiersRH';
@@ -152,7 +152,7 @@ function AppInner() {
     if (!session || !badgeRole) return;
     const manager = badgeRole === 'admin' || badgeRole === 'manager';
     const refresh = () => (manager ? fetchManagerBadges() : fetchEmployeeBadges(badgeEmpId))
-      .then(b => setBadges(manager ? b : { salarie: b.absences + b.documents, ...b }))
+      .then(b => setBadges(manager ? b : { salarie: b.absences + b.documents + b.signer, ...b }))
       .catch(() => {});
     refresh();
     const timer = setInterval(refresh, 60 * 1000);
@@ -228,7 +228,7 @@ function AppInner() {
         {page === 'salarie' && <EspaceSalarie profile={profile} />}
         {page === 'qrcode' && isManager && <QRCodePage />}
         {page === 'pointage' && <Pointeuse employeeId={profile?.employees?.id || profile?.employee_id} employeeName={(profile?.employees?.first_name || profile?.first_name || '') + ' ' + (profile?.employees?.last_name || profile?.last_name || '')} />}
-        {page === 'ged' && isManager && <GED profile={profile} />}
+        {page === 'ged' && isManager && <DocumentsPage profile={profile} />}
         {page === 'absences' && isManager && <Absences />}
         {page === 'paie' && isManager && <ExportPaie />}
         {page === 'realise' && isManager && <Realise />}

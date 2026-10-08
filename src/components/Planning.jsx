@@ -9,6 +9,9 @@ import { checkEmployeeWeek } from '../legalChecks';
 import { API } from '../config';
 
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
+const ALL = 'Tous'; // vue de tous les services a la fois
+// Le salarie travaille-t-il dans ce service (principal ou secondaire) ?
+const inService = (e, sv) => e.service === sv || (!!e.services_secondaires && e.services_secondaires.split(',').map(s => s.trim()).includes(sv));
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 const DEFAULT_SHIFTS = [
@@ -175,27 +178,38 @@ export default function Planning() {
   const absencesFor = (empId, date) => absences.filter(a => a.employee_id === empId && absenceCovers(a, date))
     .sort((x, y) => (x.status === 'acceptee' ? 0 : 1) - (y.status === 'acceptee' ? 0 : 1));
 
+  // Vue "Tous" : visibilite de chaque salarie dans son service principal (cle "service|salarie")
   async function loadVisibility() {
-    const { data } = await supabase.from('planning_visibility').select('*').eq('service', service).eq('week_start', weekStart);
+    let q = supabase.from('planning_visibility').select('*').eq('week_start', weekStart);
+    if (service !== ALL) q = q.eq('service', service);
+    const { data } = await q;
     const vis = {};
-    (data||[]).forEach(v => { vis[v.employee_id] = v.is_visible; });
+    (data||[]).forEach(v => { vis[service === ALL ? v.service + '|' + v.employee_id : v.employee_id] = v.is_visible; });
     setVisibility(vis);
   }
 
   async function toggleVisibility(empId, current) {
     const newVal = !current;
     setVisibility(prev => ({ ...prev, [empId]: newVal }));
-    await supabase.from('planning_visibility').upsert({ employee_id: empId, service, week_start: weekStart, is_visible: newVal });
+    await supabase.from('planning_visibility').upsert({ employee_id: empId, service, week_start: weekStart, is_visible: newVal }, { onConflict: 'employee_id,service,week_start' });
   }
 
-  const filtered = employees.filter(e =>
-    (e.service === service || (e.services_secondaires && e.services_secondaires.split(',').map(s=>s.trim()).includes(service)))
-    && (visibility[e.id] !== false)
-  );
+  // Affiche ou masque d'un coup tous les equipiers du service pour la semaine
+  async function setAllVisible(val) {
+    const list = employees.filter(e => inService(e, service));
+    setVisibility(prev => ({ ...prev, ...Object.fromEntries(list.map(e => [e.id, val])) }));
+    await supabase.from('planning_visibility').upsert(list.map(e => ({ employee_id: e.id, service, week_start: weekStart, is_visible: val })), { onConflict: 'employee_id,service,week_start' });
+  }
 
-  const allInService = employees.filter(e =>
-    e.service === service || (e.services_secondaires && e.services_secondaires.split(',').map(s=>s.trim()).includes(service))
-  );
+  const isAll = service === ALL;
+  const svcRank = e => { const i = SERVICES.indexOf(e.service); return i < 0 ? SERVICES.length : i; };
+  // Vue "Tous" : chaque salarie une seule fois, regroupe par service principal
+  const filtered = isAll
+    ? employees.filter(e => visibility[e.service + '|' + e.id] !== false)
+        .sort((a, b) => svcRank(a) - svcRank(b) || (a.sort_order || 0) - (b.sort_order || 0))
+    : employees.filter(e => inService(e, service) && visibility[e.id] !== false);
+
+  const allInService = isAll ? [] : employees.filter(e => inService(e, service));
 
   function showToast(msg) { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current=setTimeout(()=>setToast(''),2500); }
 
@@ -476,7 +490,7 @@ export default function Planning() {
       {/* Barre nav */}
       <div style={{borderBottom:'1px solid '+C.border,padding:'14px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',background:C.card,flexWrap:'wrap',gap:'10px'}}>
         <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
-          {SERVICES.map(sv=>(
+          {[ALL, ...SERVICES].map(sv=>(
             <button key={sv} style={{padding:'5px 14px',borderRadius:'6px',border:'1px solid '+(service===sv?C.purple:C.border),background:service===sv?C.purpleLight:'none',color:service===sv?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} onClick={()=>setService(sv)}>{sv}</button>
           ))}
         </div>
@@ -485,9 +499,9 @@ export default function Planning() {
           <span style={{fontSize:'12px',minWidth:'180px',textAlign:'center',color:C.text}}>{weekLabel}</span>
           <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontSize:'13px',fontFamily:'inherit'}}>{'>'}</button>
           <button onClick={()=>setWeekOffset(0)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.muted,cursor:'pointer',padding:'4px 10px',fontSize:'11px',fontFamily:'inherit'}}>Auj.</button>
-          <button onClick={()=>setModal('manage')} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 12px',color:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} title="Gerer les equipiers">⚙️</button>
+          {!isAll&&<button onClick={()=>setModal('manage')} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 12px',color:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} title="Gerer les equipiers">⚙️</button>}
           <button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
-          <button onClick={openTemplates} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}} title="Modèles de semaine">📋 Modèles</button>
+          {!isAll&&<button onClick={openTemplates} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}} title="Modèles de semaine">📋 Modèles</button>}
           <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>{exportingPDF?'...':'↓ PDF'}</button>
           <button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>
         </div>
@@ -520,12 +534,12 @@ export default function Planning() {
       <div style={{padding:'20px 24px'}}>
         {filtered.length===0?(
           <div style={{color:C.muted,textAlign:'center',padding:'60px',fontSize:'13px'}}>
-            Aucun salarie visible · <button onClick={()=>setModal('manage')} style={{background:'none',border:'none',color:C.purple,cursor:'pointer',fontFamily:'inherit',fontSize:'13px',textDecoration:'underline'}}>Gérer les équipiers</button>
+            Aucun salarie visible{isAll?'':<> · <button onClick={()=>setModal('manage')} style={{background:'none',border:'none',color:C.purple,cursor:'pointer',fontFamily:'inherit',fontSize:'13px',textDecoration:'underline'}}>Gérer les équipiers</button></>}
           </div>
         ):(
           <div ref={planningRef} style={{border:'1px solid '+C.border,borderRadius:'10px',overflow:'hidden',boxShadow:'0 2px 8px '+C.shadow,background:'#fff'}}>
             <div style={{padding:'10px 16px',background:'#f8f9ff',borderBottom:'1px solid '+C.border,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div style={{fontSize:'13px',fontWeight:600,color:'#1A1D27'}}>Planning {service} · {weekLabel}</div>
+              <div style={{fontSize:'13px',fontWeight:600,color:'#1A1D27'}}>Planning {isAll?'tous services':service} · {weekLabel}</div>
               <div style={{fontSize:'11px',color:'#6B7280'}}>{currentMonthLabel} · Le Bout du Monde</div>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',background:'#f8f9ff',borderBottom:'1px solid '+C.border}}>
@@ -540,11 +554,15 @@ export default function Planning() {
               const totalH = calcHeuresEmp(emp.id, shiftsMap);
               const contractH = parseFloat(emp.contract_hours)||35;
               const hColor = totalH>48?'#DC2626':totalH>44?'#D97706':totalH>contractH?'#6C5FCD':'#16A34A';
-              const isMulti = emp.service !== service;
+              const isMulti = !isAll && emp.service !== service;
               const monthly = monthlySummary[emp.id]||{heures_planifiees:0,heures_realisees:0};
+              // Vue "Tous" : bandeau au debut de chaque service
+              const header = isAll && (ei === 0 || filtered[ei-1].service !== emp.service);
               return(
-                <div key={emp.id}
-                  draggable onDragStart={()=>setDragEmpIdx(ei)} onDragOver={e=>e.preventDefault()}
+                <React.Fragment key={emp.id}>
+                {header&&<div style={{padding:'5px 12px',background:'#EEF2FF',borderBottom:'1px solid '+C.border,borderTop:ei>0?'1px solid '+C.border:'none',fontSize:'10px',fontWeight:700,letterSpacing:'0.08em',color:'#4338CA'}}>{(emp.service||'Sans service').toUpperCase()}</div>}
+                <div
+                  draggable={!isAll} onDragStart={()=>setDragEmpIdx(ei)} onDragOver={e=>e.preventDefault()}
                   onDrop={()=>{ if(dragEmpIdx!==null&&dragEmpIdx!==ei){moveEmp(dragEmpIdx,ei);setDragEmpIdx(null);} }}
                   style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none',opacity:dragEmpIdx===ei?0.5:1}}>
                   <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:'#fff',cursor:'grab'}}>
@@ -614,6 +632,7 @@ export default function Planning() {
                     );
                   })}
                 </div>
+                </React.Fragment>
               );
             })}
           </div>
@@ -736,7 +755,12 @@ export default function Planning() {
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:'20px'}} onClick={()=>setModal(null)}>
           <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'380px',maxHeight:'80vh',overflowY:'auto',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:'14px',fontWeight:600,marginBottom:'4px',color:C.text}}>Équipiers · {service}</div>
-            <div style={{fontSize:'11px',color:C.muted,marginBottom:'16px'}}>Semaine du {weekLabel}</div>
+            <div style={{fontSize:'11px',color:C.muted,marginBottom:'10px'}}>Semaine du {weekLabel}</div>
+            <div style={{display:'flex',gap:'6px',marginBottom:'12px'}}>
+              {[{v:true,l:'Tout afficher'},{v:false,l:'Tout masquer'}].map(b=>(
+                <button key={b.l} onClick={()=>setAllVisible(b.v)} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'4px 10px',color:C.text,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}}>{b.l}</button>
+              ))}
+            </div>
             <div style={{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'16px'}}>
               {allInService.map((emp,i)=>{
                 const isVisible = visibility[emp.id] !== false;

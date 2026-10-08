@@ -4,9 +4,10 @@ import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import supabase from '../supabase';
-import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod, overlaps, isActive } from '../absences';
+import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod, overlaps, isActive, frDate } from '../absences';
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 import { API } from '../config';
+import DocsASigner from './DocsASigner';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
 const DOC_GROUPS = [
@@ -119,6 +120,13 @@ export default function EspaceSalarie({ profile }) {
   useEffect(()=>{if(tab==='absences')loadAbsences();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,selectedEmp]);
+  // Periodes sans conges payes (Parametrage > Conges payes) : seules celles qui ne sont pas terminees
+  const [cpBlackout,setCpBlackout]=useState([]);
+  useEffect(()=>{
+    if(tab!=='absences')return;
+    supabase.from('app_settings').select('value').eq('key','cp_blackout').maybeSingle()
+      .then(({data})=>setCpBlackout((Array.isArray(data?.value)?data.value:[]).filter(p=>p.start&&p.end&&p.end>=fmtDate(new Date()))));
+  },[tab]);
 
   async function submitAbsence(){
     setAbsMsg(null);
@@ -126,6 +134,10 @@ export default function EspaceSalarie({ profile }) {
     if(!f.start_date){setAbsMsg({err:true,text:'Indiquez la date de debut.'});return;}
     const end=f.end_date||f.start_date;
     if(end<f.start_date){setAbsMsg({err:true,text:'La date de fin doit etre apres la date de debut.'});return;}
+    if(f.type==='conge_paye'&&!isManager){
+      const blocked=cpBlackout.find(p=>overlaps({start_date:p.start,end_date:p.end},{start_date:f.start_date,end_date:end}));
+      if(blocked){setAbsMsg({err:true,text:'Pas de congés payés possibles du '+frDate(blocked.start)+' au '+frDate(blocked.end)+(blocked.label?' ('+blocked.label+')':'')+". Choisissez d'autres dates ou parlez-en à votre responsable."});return;}
+    }
     // Chevauchement avec une demande deja en cours ou acceptee
     const clash=absences.filter(a=>isActive(a)&&overlaps(a,{start_date:f.start_date,end_date:end}));
     if(clash.length&&!window.confirm('Cette periode chevauche deja :\n'+clash.map(a=>'- '+absenceType(a.type).label+' '+absencePeriod(a).toLowerCase()+' ('+statusInfo(a).label.toLowerCase()+')').join('\n')+'\n\nEnvoyer quand meme la demande ?'))return;
@@ -225,13 +237,19 @@ export default function EspaceSalarie({ profile }) {
           </div>
         )}
         <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
-          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},{id:'documents',label:'Mes documents'}].map(t=>(
+          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},{id:'documents',label:'Mes documents'},{id:'signer',label:'À signer'}].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400,position:'relative'}}>{t.label}<Badge count={tab===t.id?0:tabBadges[t.id]} style={{top:'0px',right:'-4px'}}/></button>
           ))}
         </div>
       </div>
 
       <div style={{padding:'16px 20px',maxWidth:'700px',margin:'0 auto'}}>
+        {tab==='planning'&&!isManager&&tabBadges.signer>0&&(
+          <div onClick={()=>setTab('signer')} style={{cursor:'pointer',background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'12px',color:C.red,fontWeight:600}}>
+            ✍️ {tabBadges.signer} document{tabBadges.signer>1?'s':''} obligatoire{tabBadges.signer>1?'s':''} à lire et signer →
+          </div>
+        )}
+        {tab==='signer'&&<DocsASigner key={selectedEmp.id} employee={selectedEmp} readOnly={isManager}/>}
         {tab==='planning'&&(
           <div>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}}>
@@ -302,6 +320,11 @@ export default function EspaceSalarie({ profile }) {
                   <input type="date" style={{...inp,marginTop:'4px'}} value={absForm.end_date} min={absForm.start_date||undefined} onChange={e=>setAbsForm(f=>({...f,end_date:e.target.value}))}/>
                 </label>
               </div>
+              {absForm.type==='conge_paye'&&cpBlackout.length>0&&(
+                <div style={{fontSize:'11px',color:C.red,background:C.redLight,border:'1px solid '+C.red+'33',borderRadius:'6px',padding:'8px 10px',marginBottom:'10px',lineHeight:1.6}}>
+                  <strong>Pas de congés payés :</strong>{cpBlackout.map((p,i)=><div key={i}>· du {frDate(p.start)} au {frDate(p.end)}{p.label?' — '+p.label:''}</div>)}
+                </div>
+              )}
               <input style={{...inp,marginBottom:'10px'}} placeholder="Commentaire (facultatif)" value={absForm.comment} onChange={e=>setAbsForm(f=>({...f,comment:e.target.value}))}/>
               {absMsg&&<div style={{fontSize:'12px',color:absMsg.err?C.red:C.green,marginBottom:'10px'}}>{absMsg.text}</div>}
               <button onClick={submitAbsence} disabled={absSaving} style={{background:C.purple,border:'none',borderRadius:'6px',padding:'8px 18px',color:'#fff',fontSize:'12px',fontFamily:'inherit',fontWeight:600,cursor:absSaving?'not-allowed':'pointer',opacity:absSaving?0.7:1}}>{absSaving?'Envoi...':'Envoyer la demande'}</button>

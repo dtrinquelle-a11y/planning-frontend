@@ -17,8 +17,13 @@ export default function Absences() {
   const [busy, setBusy] = useState(null);
   const [editing, setEditing] = useState(null); // { id, mode: 'accept_edit'|'edit'|'cancel', start, end, comment }
   const [toast, setToast] = useState(null);
+  const [cpBlackout, setCpBlackout] = useState([]); // periodes sans conges payes (Parametrage)
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    supabase.from('app_settings').select('value').eq('key', 'cp_blackout').maybeSingle()
+      .then(({ data }) => setCpBlackout(Array.isArray(data?.value) ? data.value : []));
+  }, []);
 
   function showToast(msg, color) { setToast({ msg, color: color || C.green }); setTimeout(() => setToast(null), 3000); }
 
@@ -145,6 +150,9 @@ export default function Absences() {
                       {isModified(a) && <div style={{ fontSize: '11px', color: C.amber, marginTop: '4px' }}>Demandé initialement : {requestedPeriod(a).toLowerCase()}</div>}
                       {a.comment && <div style={{ fontSize: '11px', color: C.muted, fontStyle: 'italic', marginTop: '4px' }}>« {a.comment} »</div>}
                       <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px' }}>Demandé le {frDate(a.created_at)}{a.decided_at ? ' · traité le ' + frDate(a.decided_at) : ''}</div>
+                      {a.type === 'conge_paye' && isActive(a) && cpBlackout.filter(p => overlaps({ start_date: p.start, end_date: p.end }, a)).map((p, i) => (
+                        <div key={i} style={{ fontSize: '11px', color: C.red, marginTop: '6px' }}>⛔ Sur une période sans congés payés (du {frDate(p.start)} au {frDate(p.end)}{p.label ? ' — ' + p.label : ''})</div>
+                      ))}
                       {conflicts[a.id] > 0 && (
                         <div style={{ fontSize: '11px', color: C.amber, marginTop: '6px' }}>⚠️ {conflicts[a.id]} créneau(x) déjà planifié(s) sur cette période</div>
                       )}

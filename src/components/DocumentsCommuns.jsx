@@ -88,6 +88,9 @@ export default function DocumentsCommuns() {
     finally { setBusy(false); }
   }
 
+  // Reglages du document (titre, message, signature) : le fichier ou la video ne changent pas
+  const editDoc = doc => setForm({ mode: 'edit', doc, ...EMPTY, title: doc.title, description: doc.description || '', renewal: doc.renewal, requires_signature: doc.requires_signature });
+
   async function toggleArchive(doc) {
     if (doc.is_active && !window.confirm('Archiver « ' + doc.title + ' » ?\nIl ne sera plus demandé aux salariés. Les signatures déjà faites sont conservées.')) return;
     const { error } = await supabase.from('mandatory_docs').update({ is_active: !doc.is_active }).eq('id', doc.id);
@@ -182,6 +185,7 @@ export default function DocumentsCommuns() {
                       <div style={{ height: '6px', background: C.border, borderRadius: '3px', overflow: 'hidden' }}><div style={{ height: '6px', width: pct + '%', background: done === total ? C.green : C.purple }} /></div>
                     </div>
                   )}
+                  <button onClick={() => editDoc(doc)} title="Modifier les réglages" aria-label="Modifier les réglages" style={{ ...btn, padding: '5px 8px' }}>✏️</button>
                   <button onClick={() => setDetail(open ? null : doc.id)} style={{ ...btn, background: open ? C.purpleLight : C.card, color: open ? C.purple : C.text }}>{open ? 'Fermer' : doc.requires_signature ? 'Suivi' : 'Gérer'}</button>
                 </div>
 
@@ -189,7 +193,7 @@ export default function DocumentsCommuns() {
                   <div style={{ marginTop: '12px', borderTop: '1px solid ' + C.border, paddingTop: '12px' }}>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
                       <button onClick={() => doc.kind === 'video' ? window.open(doc.video_url, '_blank') : openCommonFile(doc)} style={btn}>👁 Voir</button>
-                      <button onClick={() => setForm({ mode: 'edit', doc, ...EMPTY, title: doc.title, description: doc.description || '', renewal: doc.renewal, requires_signature: doc.requires_signature })} style={btn}>✏️ Modifier</button>
+                      <button onClick={() => editDoc(doc)} style={btn}>✏️ Modifier</button>
                       <button onClick={() => setForm({ mode: 'version', doc, ...EMPTY, kind: doc.kind, video_url: '' })} style={btn}>🔄 Nouvelle version</button>
                       {doc.requires_signature && doc.is_active && done < total && <button onClick={() => remind(doc)} style={btn}>✉️ Relancer les non-signataires</button>}
                       {doc.requires_signature && <button onClick={() => exportCsv(doc)} style={btn}>↓ Registre (CSV)</button>}
@@ -238,6 +242,9 @@ export default function DocumentsCommuns() {
               {form.mode === 'new' ? 'Ajouter un document commun' : form.mode === 'edit' ? 'Modifier « ' + form.doc.title + ' »' : 'Nouvelle version de « ' + form.doc.title + ' »'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {form.mode === 'edit' && <div style={{ fontSize: '11px', color: C.muted, background: C.bg, borderRadius: '6px', padding: '8px 10px' }}>
+                {form.doc.kind === 'video' ? 'La vidéo' : 'Le fichier « ' + form.doc.file_name + ' »'} reste inchangé{form.doc.kind === 'video' ? 'e' : ''}. Pour le remplacer, utilisez « Nouvelle version ».
+              </div>}
               {form.mode !== 'version' && <>
                 <div><label style={lbl}>TITRE</label><input style={inp} placeholder="Ex : Document Unique 2027" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
                 <div><label style={lbl}>MESSAGE AUX SALARIÉS (FACULTATIF)</label><textarea style={{ ...inp, minHeight: '60px', resize: 'vertical' }} placeholder="Ex : à lire attentivement avant votre première journée" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>

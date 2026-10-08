@@ -5,10 +5,10 @@ import { useTheme } from '../ThemeContext';
 import { API } from '../config';
 import { RENEWALS, docStatus, STATUS_INFO, youtubeId, frDateTime, frDay, openCommonFile } from '../signatures';
 
-const EMPTY = { title: '', description: '', kind: 'fichier', video_url: '', renewal: 'annuel', file: null };
+const EMPTY = { title: '', description: '', kind: 'fichier', video_url: '', renewal: 'annuel', requires_signature: true, file: null };
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-// Page manager : documents communs a lire et signer par tous les salaries (Document Unique, reglement, video...)
+// Page manager : documents communs a tous les salaries, a signer (Document Unique, reglement, video...) ou en simple consultation
 export default function DocumentsCommuns() {
   const { colors: C } = useTheme();
   const [docs, setDocs] = useState([]);
@@ -64,13 +64,13 @@ export default function DocumentsCommuns() {
       if (f.mode === 'new') {
         const id = crypto.randomUUID();
         const media = f.kind === 'fichier' ? await uploadFile(id, f.file) : { video_url: f.video_url.trim() };
-        const { error } = await supabase.from('mandatory_docs').insert({ id, title: f.title.trim(), description: f.description.trim() || null, kind: f.kind, renewal: f.renewal, sort_order: docs.length, ...media });
+        const { error } = await supabase.from('mandatory_docs').insert({ id, title: f.title.trim(), description: f.description.trim() || null, kind: f.kind, renewal: f.renewal, requires_signature: f.requires_signature, sort_order: docs.length, ...media });
         if (error) throw error;
         setForm(null); await load();
-        if (emps.length && window.confirm('Document ajouté.\n\nPrévenir maintenant par email les ' + emps.length + ' salariés concernés ?')) await remind({ id, title: f.title.trim() }, true);
+        if (f.requires_signature && emps.length && window.confirm('Document ajouté.\n\nPrévenir maintenant par email les ' + emps.length + ' salariés concernés ?')) await remind({ id, title: f.title.trim() }, true);
         else showToast('Document ajouté');
       } else if (f.mode === 'edit') {
-        const { error } = await supabase.from('mandatory_docs').update({ title: f.title.trim(), description: f.description.trim() || null, renewal: f.renewal }).eq('id', f.doc.id);
+        const { error } = await supabase.from('mandatory_docs').update({ title: f.title.trim(), description: f.description.trim() || null, renewal: f.renewal, requires_signature: f.requires_signature }).eq('id', f.doc.id);
         if (error) throw error;
         setForm(null); showToast('Modifications enregistrées'); await load();
       } else {
@@ -81,7 +81,7 @@ export default function DocumentsCommuns() {
         const { error } = await supabase.from('mandatory_docs').update({ ...media, version: d.version + 1, version_date: new Date().toISOString(), previous_versions: [...(d.previous_versions || []), prev] }).eq('id', d.id);
         if (error) throw error;
         setForm(null); await load();
-        if (emps.length && window.confirm('Nouvelle version enregistrée : tous les salariés doivent la signer de nouveau.\n\nLes prévenir maintenant par email ?')) await remind(d, true);
+        if (d.requires_signature && emps.length && window.confirm('Nouvelle version enregistrée : tous les salariés doivent la signer de nouveau.\n\nLes prévenir maintenant par email ?')) await remind(d, true);
         else showToast('Nouvelle version enregistrée');
       }
     } catch (err) { showToast('Erreur : ' + err.message, C.red); }
@@ -116,7 +116,7 @@ export default function DocumentsCommuns() {
 
   // Registre des signatures (CSV pour Excel) : toutes les signatures conservees, toutes versions
   function exportCsv(doc) {
-    const list = doc ? docs.filter(d => d.id === doc.id) : docs;
+    const list = (doc ? docs.filter(d => d.id === doc.id) : docs).filter(d => d.requires_signature);
     const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     const lines = [['Document', 'Version', 'Salarié', 'Service', 'Date de signature', 'Mode', 'Statut actuel'].map(esc).join(';')];
     list.forEach(d => {
@@ -127,7 +127,7 @@ export default function DocumentsCommuns() {
         mine.forEach(s => lines.push([d.title, 'v' + s.version, e.last_name + ' ' + e.first_name, e.service, frDateTime(s.signed_at), s.method === 'papier' ? 'Papier' : 'En ligne', STATUS_INFO[st.state].label].map(esc).join(';')));
       });
     });
-    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'registre-signatures' + (doc ? '-' + doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') : '') + '_' + todayIso() + '.csv';
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -142,10 +142,11 @@ export default function DocumentsCommuns() {
     <div style={{ padding: '20px 24px', maxWidth: '980px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <div style={{ maxWidth: '620px' }}>
-          <div style={{ fontSize: '16px', fontWeight: 600, color: C.text, marginBottom: '4px' }}>Documents à signer par tous</div>
+          <div style={{ fontSize: '16px', fontWeight: 600, color: C.text, marginBottom: '4px' }}>Documents communs</div>
           <div style={{ fontSize: '12px', color: C.muted, lineHeight: 1.6 }}>
-            Document Unique, règlement intérieur, consignes, vidéo de sécurité… Chaque salarié actif les retrouve dans son espace (onglet « À signer »)
-            et atteste les avoir lus. Date, heure et compte sont enregistrés comme preuve.
+            Document Unique, règlement intérieur, consignes, vidéo de sécurité, livret d'accueil… Chaque salarié actif les retrouve dans son espace
+            (onglet « Documents communs »). Pour un document à signer, il atteste l'avoir lu : date, heure et compte sont enregistrés comme preuve.
+            Un document en consultation est simplement mis à disposition.
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -171,31 +172,31 @@ export default function DocumentsCommuns() {
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>{doc.title}{!doc.is_active && <span style={{ fontWeight: 400, color: C.muted }}> · archivé</span>}</div>
                     <div style={{ fontSize: '11px', color: C.muted }}>
-                      {RENEWALS.find(r => r.id === doc.renewal)?.label} · version {doc.version} du {frDay(doc.version_date)}
+                      {doc.requires_signature ? RENEWALS.find(r => r.id === doc.renewal)?.label : 'Consultation seulement'} · version {doc.version} du {frDay(doc.version_date)}
                       {doc.kind === 'fichier' ? ' · ' + doc.file_name : ''}
                     </div>
                   </div>
-                  {doc.is_active && (
+                  {doc.is_active && doc.requires_signature && (
                     <div style={{ minWidth: '130px' }}>
                       <div style={{ fontSize: '11px', color: done === total ? C.green : C.text, fontWeight: 600, marginBottom: '3px' }}>{done} / {total} signé{done > 1 ? 's' : ''}</div>
                       <div style={{ height: '6px', background: C.border, borderRadius: '3px', overflow: 'hidden' }}><div style={{ height: '6px', width: pct + '%', background: done === total ? C.green : C.purple }} /></div>
                     </div>
                   )}
-                  <button onClick={() => setDetail(open ? null : doc.id)} style={{ ...btn, background: open ? C.purpleLight : C.card, color: open ? C.purple : C.text }}>{open ? 'Fermer' : 'Suivi'}</button>
+                  <button onClick={() => setDetail(open ? null : doc.id)} style={{ ...btn, background: open ? C.purpleLight : C.card, color: open ? C.purple : C.text }}>{open ? 'Fermer' : doc.requires_signature ? 'Suivi' : 'Gérer'}</button>
                 </div>
 
                 {open && (
                   <div style={{ marginTop: '12px', borderTop: '1px solid ' + C.border, paddingTop: '12px' }}>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
                       <button onClick={() => doc.kind === 'video' ? window.open(doc.video_url, '_blank') : openCommonFile(doc)} style={btn}>👁 Voir</button>
-                      <button onClick={() => setForm({ mode: 'edit', doc, ...EMPTY, title: doc.title, description: doc.description || '', renewal: doc.renewal })} style={btn}>✏️ Modifier</button>
+                      <button onClick={() => setForm({ mode: 'edit', doc, ...EMPTY, title: doc.title, description: doc.description || '', renewal: doc.renewal, requires_signature: doc.requires_signature })} style={btn}>✏️ Modifier</button>
                       <button onClick={() => setForm({ mode: 'version', doc, ...EMPTY, kind: doc.kind, video_url: '' })} style={btn}>🔄 Nouvelle version</button>
-                      {doc.is_active && done < total && <button onClick={() => remind(doc)} style={btn}>✉️ Relancer les non-signataires</button>}
-                      <button onClick={() => exportCsv(doc)} style={btn}>↓ Registre (CSV)</button>
+                      {doc.requires_signature && doc.is_active && done < total && <button onClick={() => remind(doc)} style={btn}>✉️ Relancer les non-signataires</button>}
+                      {doc.requires_signature && <button onClick={() => exportCsv(doc)} style={btn}>↓ Registre (CSV)</button>}
                       <button onClick={() => toggleArchive(doc)} style={{ ...btn, color: doc.is_active ? C.red : C.green }}>{doc.is_active ? 'Archiver' : 'Réactiver'}</button>
                     </div>
                     {doc.description && <div style={{ fontSize: '12px', color: C.muted, marginBottom: '10px', whiteSpace: 'pre-wrap' }}>{doc.description}</div>}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {doc.requires_signature && <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {emps.map(e => {
                         const st = docStatus(doc, sigsOf(e.id)); const info = STATUS_INFO[st.state];
                         return (
@@ -210,7 +211,7 @@ export default function DocumentsCommuns() {
                         );
                       })}
                       {!emps.length && <div style={{ fontSize: '12px', color: C.muted }}>Aucun salarié actif.</div>}
-                    </div>
+                    </div>}
                     {(doc.previous_versions || []).length > 0 && (
                       <div style={{ fontSize: '11px', color: C.muted, marginTop: '10px' }}>
                         Versions précédentes : {doc.previous_versions.map(v => 'v' + v.version + ' du ' + frDay(v.version_date)).join(' · ')}
@@ -234,13 +235,22 @@ export default function DocumentsCommuns() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }} onClick={() => !busy && setForm(null)}>
           <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '20px', width: '460px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '14px', fontWeight: 600, color: C.text, marginBottom: '14px' }}>
-              {form.mode === 'new' ? 'Ajouter un document à signer' : form.mode === 'edit' ? 'Modifier « ' + form.doc.title + ' »' : 'Nouvelle version de « ' + form.doc.title + ' »'}
+              {form.mode === 'new' ? 'Ajouter un document commun' : form.mode === 'edit' ? 'Modifier « ' + form.doc.title + ' »' : 'Nouvelle version de « ' + form.doc.title + ' »'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {form.mode !== 'version' && <>
                 <div><label style={lbl}>TITRE</label><input style={inp} placeholder="Ex : Document Unique 2027" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
                 <div><label style={lbl}>MESSAGE AUX SALARIÉS (FACULTATIF)</label><textarea style={{ ...inp, minHeight: '60px', resize: 'vertical' }} placeholder="Ex : à lire attentivement avant votre première journée" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
                 <div>
+                  <label style={lbl}>LE SALARIÉ DOIT</label>
+                  {[{ v: true, l: 'Le lire et le signer', h: 'signature horodatée, suivi et relances' }, { v: false, l: 'Seulement pouvoir le consulter', h: 'aucune signature demandée' }].map(o => (
+                    <label key={String(o.v)} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: C.text, marginBottom: '6px', cursor: 'pointer' }}>
+                      <input type="radio" checked={form.requires_signature === o.v} onChange={() => setForm(f => ({ ...f, requires_signature: o.v }))} style={{ marginTop: '2px', accentColor: C.purple }} />
+                      <span>{o.l} <span style={{ color: C.muted }}>— {o.h}</span></span>
+                    </label>
+                  ))}
+                </div>
+                {form.requires_signature && <div>
                   <label style={lbl}>SIGNATURE</label>
                   {RENEWALS.map(r => (
                     <label key={r.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: C.text, marginBottom: '6px', cursor: 'pointer' }}>
@@ -248,7 +258,7 @@ export default function DocumentsCommuns() {
                       <span>{r.label} <span style={{ color: C.muted }}>— {r.hint}</span></span>
                     </label>
                   ))}
-                </div>
+                </div>}
               </>}
               {form.mode === 'new' && (
                 <div>
@@ -260,7 +270,7 @@ export default function DocumentsCommuns() {
                   </div>
                 </div>
               )}
-              {form.mode === 'version' && <div style={{ fontSize: '12px', color: C.amber, background: C.amberLight, borderRadius: '6px', padding: '8px 10px' }}>Tous les salariés devront signer cette nouvelle version. L'ancienne version et ses signatures sont conservées.</div>}
+              {form.mode === 'version' && form.doc.requires_signature && <div style={{ fontSize: '12px', color: C.amber, background: C.amberLight, borderRadius: '6px', padding: '8px 10px' }}>Tous les salariés devront signer cette nouvelle version. L'ancienne version et ses signatures sont conservées.</div>}
               {form.mode !== 'edit' && (form.kind === 'fichier' ? (
                 <div>
                   <label style={lbl}>FICHIER (50 MO MAXIMUM)</label>

@@ -241,7 +241,7 @@ export default function EspaceSalarie({ profile }) {
           </div>
         )}
         <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
-          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires'}]:[]),{id:'documents',label:'Mes documents'},{id:'signer',label:'À signer'}].map(t=>(
+          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires'}]:[]),{id:'documents',label:'Mes documents'},{id:'signer',label:'Documents communs'}].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400,position:'relative'}}>{t.label}<Badge count={tab===t.id?0:tabBadges[t.id]} style={{top:'0px',right:'-4px'}}/></button>
           ))}
         </div>

@@ -359,7 +359,7 @@ export default function Parametrage() {
                               <strong>Pointeuse sur OFF : horaires déclarés</strong><br />
                               · À la fin de chaque créneau, le salarié répond dans « Mon planning › Mes horaires » : <em>avez-vous réalisé les horaires prévus ?</em> Oui, ou Non et il corrige ses heures.<br />
                               · Le dimanche à 18 h, chacun reçoit un email récapitulatif de sa semaine avec les journées restant à valider.<br />
-                              · Le lundi à 6 h, la semaine est clôturée : plus aucune modification par le salarié, et les journées non validées sont retenues telles que prévues.<br />
+                              · Le lundi à 12 h, la semaine est clôturée : plus aucune modification par le salarié, et les journées non validées sont retenues telles que prévues.<br />
                               · Les heures déclarées alimentent le Réalisé, l'export de paie et le compteur de modulation. Vous pouvez corriger à tout moment (Espace salarié › Horaires).
                               {settings.pointeuse?.declaratif_depuis && <><br /><span style={{ color: C.muted }}>Mode actif depuis le {settings.pointeuse.declaratif_depuis.split('-').reverse().join('/')}.</span></>}
                             </div>

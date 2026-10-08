@@ -133,7 +133,7 @@ export default function ExportPaie() {
     const rowsOut = data.rows.map(r => ({ ...r, val: vals[r.employee_id] || { paid: 0, banked: 0 },
       cumulBanked: Math.round(((cumul[r.employee_id] || 0) + (Number(vals[r.employee_id]?.banked) || 0)) * 100) / 100 }));
     const lines = [COLUMNS.map(c => esc(c[0])).join(';'), ...rowsOut.map(r => COLUMNS.map(c => esc(c[1](r))).join(';'))];
-    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'variables-paie-' + month + '.csv';

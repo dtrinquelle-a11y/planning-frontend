@@ -10,7 +10,7 @@ export default function DocumentsPage({ profile }) {
   return (
     <div style={{ minHeight: '100vh', background: C.bg }}>
       <div style={{ display: 'flex', gap: '4px', padding: '10px 24px 0', background: C.card, borderBottom: '1px solid ' + C.border }}>
-        {[{ id: 'individuels', label: 'Documents des salariés' }, { id: 'communs', label: '✍️ À signer par tous' }].map(t => (
+        {[{ id: 'individuels', label: 'Documents des salariés' }, { id: 'communs', label: '📚 Documents communs' }].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{ padding: '8px 14px', background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === t.id ? C.purple : 'transparent'), color: tab === t.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: tab === t.id ? 600 : 500 }}>
             {t.label}

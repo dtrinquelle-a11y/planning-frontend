@@ -42,7 +42,7 @@ export const frDay = iso => new Date(iso).toLocaleDateString('fr-FR');
 export async function countDocsToSign(empId) {
   if (!empId) return 0;
   const [docs, sigs] = await Promise.all([
-    supabase.from('mandatory_docs').select('id, version, renewal').eq('is_active', true),
+    supabase.from('mandatory_docs').select('id, version, renewal').eq('is_active', true).eq('requires_signature', true),
     supabase.from('mandatory_doc_signatures').select('doc_id, version, signed_at').eq('employee_id', empId),
   ]);
   return (docs.data || []).filter(d => docStatus(d, sigs.data).state !== 'signe').length;

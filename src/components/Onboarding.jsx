@@ -337,9 +337,24 @@ export default function Onboarding() {
               <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '20px', color: C.text }}>Informations personnelles</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 {textFields.map(field => (
-                  <div key={field.id} style={{ gridColumn: field.label.toLowerCase().includes('adresse') || field.label.length > 30 || fieldOptions(field).some(o => o.length > 25) ? 'span 2' : 'span 1' }}>
+                  <div key={field.id} style={{ gridColumn: field.field_type === 'multiselect' || field.label.toLowerCase().includes('adresse') || field.label.length > 30 || fieldOptions(field).some(o => o.length > 25) ? 'span 2' : 'span 1' }}>
                     <label style={lbl}>{field.label.toUpperCase()} {field.required ? '*' : ''}</label>
-                    {field.field_type === 'select' ? (
+                    {field.field_type === 'multiselect' ? (
+                      // Choix multiple : cases a cocher, valeur enregistree "A, B, C"
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {fieldOptions(field).map(o => {
+                          const sel = String(responses[field.id] || '').split(', ').filter(Boolean);
+                          const on = sel.includes(o);
+                          return (
+                            <label key={o} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '999px', border: '1px solid ' + (on ? C.purple : C.border), background: on ? C.purpleLight : C.bg, color: on ? C.purple : C.text, fontSize: '12px', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={on} style={{ accentColor: C.purple, margin: 0 }}
+                                onChange={() => setResponses(r => ({ ...r, [field.id]: (on ? sel.filter(x => x !== o) : [...sel, o]).join(', ') }))} />
+                              {o}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : field.field_type === 'select' ? (
                       <select style={inp} value={responses[field.id] || ''} onChange={e => setResponses(r => ({ ...r, [field.id]: e.target.value }))}>
                         <option value="">-- Choisir --</option>
                         {fieldOptions(field).map(o => <option key={o} value={o}>{o}</option>)}

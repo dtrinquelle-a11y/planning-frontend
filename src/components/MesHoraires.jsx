@@ -89,7 +89,7 @@ export default function MesHoraires({ employee, asManager, onChange }) {
     <div>
       <div style={{ fontSize: '12px', color: C.muted, marginBottom: '14px', lineHeight: 1.6 }}>
         {asManager ? 'Horaires déclarés par le salarié. En tant que responsable, vous pouvez les corriger, même après la clôture.'
-          : 'À la fin de chaque journée, confirmez vos horaires. Chaque semaine est clôturée le lundi à 6 h : les journées non validées sont alors retenues telles que prévues.'}
+          : 'À la fin de chaque journée, confirmez vos horaires. Chaque semaine est clôturée le lundi à 12 h : les journées non validées sont alors retenues telles que prévues.'}
       </div>
       {msg && <div style={{ fontSize: '12px', color: msg.err ? C.red : C.green, marginBottom: '10px' }}>{msg.text}</div>}
       {!keys.length && <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '24px', textAlign: 'center', color: C.muted, fontSize: '12px' }}>Aucun créneau sur la période.</div>}
@@ -107,7 +107,7 @@ export default function MesHoraires({ employee, asManager, onChange }) {
               <div>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: C.text }}>Semaine du {dayLabel(k)} au {dayLabel(isoDay(end))}</div>
                 <div style={{ fontSize: '11px', color: locked ? C.muted : C.amber }}>
-                  {locked ? '🔒 Clôturée' : 'Clôture ' + dayLabel(isoDay(lock)).toLowerCase() + ' à 6 h'}{total ? ' · ' + fmtH(total) + ' validées' : ''}
+                  {locked ? '🔒 Clôturée' : 'Clôture ' + dayLabel(isoDay(lock)).toLowerCase() + ' à 12 h'}{total ? ' · ' + fmtH(total) + ' validées' : ''}
                 </div>
               </div>
               {todo.length > 1 && !locked && <button onClick={() => confirmAll(todo)} style={{ ...btn, background: C.green, borderColor: C.green, color: '#fff' }}>✓ Tout valider tel que prévu ({todo.length})</button>}

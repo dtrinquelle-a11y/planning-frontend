@@ -204,6 +204,41 @@ export default function DossiersRH() {
   const pendingCount = employees.filter(e => e.onboarding_completed && !e.is_active).length;
   const inp = { background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 10px', color: C.text, fontSize: '12px', fontFamily: 'inherit' };
 
+  // Liste des salaries actifs avec leurs coordonnees (CSV pour Excel). Volontairement sans n° de securite sociale ni IBAN.
+  const [exporting, setExporting] = useState(false);
+  async function exportEmployees() {
+    setExporting(true);
+    try {
+      const [{ data: emps, error }, { data: resps }] = await Promise.all([
+        supabase.from('employees').select('id, first_name, last_name, service, role, contract_type, contract_hours, hire_date, contract_end_date, email, phone, address, birth_date')
+          .eq('is_active', true).eq('is_temp', false).order('service').order('last_name'),
+        supabase.from('onboarding_responses').select('employee_id, value, onboarding_fields(label, field_type)'),
+      ]);
+      if (error) throw error;
+      // Reponses d'onboarding par salarie, indexees par libelle du champ
+      const byEmp = {};
+      (resps || []).forEach(r => { if (r.onboarding_fields && !['file', 'signature'].includes(r.onboarding_fields.field_type)) (byEmp[r.employee_id] = byEmp[r.employee_id] || {})[r.onboarding_fields.label] = r.value; });
+      const fr = d => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '');
+      const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const head = ['Nom', 'Prénom', 'Service', 'Poste', 'Contrat', 'Heures/sem.', 'Début de contrat', 'Fin de contrat', 'Email', 'Téléphone',
+        'Adresse', 'Code postal', 'Ville', 'Date de naissance', "Contact d'urgence", 'Lien', "Téléphone d'urgence", 'Langues parlées'];
+      const lines = [head.map(esc).join(';')];
+      (emps || []).forEach(e => {
+        const r = byEmp[e.id] || {};
+        const langues = [r['Langues parlees'], r['Autres langues parlees']].filter(Boolean).join(', ');
+        lines.push([e.last_name, e.first_name, e.service, e.role, e.contract_type, e.contract_hours, fr(e.hire_date), fr(e.contract_end_date),
+          e.email && !e.email.endsWith('@temp.fr') ? e.email : '', e.phone || r['Telephone'] || '', e.address || r['Adresse'] || '', r['Code postal'] || '', r['Ville'] || '',
+          fr(e.birth_date || r['Date de naissance']), r["Personne a contacter en cas d'urgence (nom et prenom)"] || '', r['Lien avec cette personne'] || '',
+          r['Telephone de la personne a contacter'] || '', langues].map(esc).join(';'));
+      });
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'liste-salaries_' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (err) { alert('Export impossible : ' + err.message); }
+    finally { setExporting(false); }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" }}>
       {/* Header */}
@@ -212,6 +247,10 @@ export default function DossiersRH() {
           <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.1em', marginBottom: '2px' }}>ADMINISTRATION</div>
           <div style={{ fontSize: '18px', fontWeight: 600, color: C.text }}>Dossiers RH</div>
         </div>
+        <button onClick={exportEmployees} disabled={exporting} title="Salariés actifs : coordonnées, contrat, contact d'urgence, langues (sans n° de sécurité sociale ni IBAN)"
+          style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '8px 14px', color: C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, opacity: exporting ? 0.6 : 1 }}>
+          {exporting ? 'Export...' : '↓ Liste des salariés (Excel)'}
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '8px', padding: '8px 14px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '11px', color: C.purple }}>Lien onboarding :</span>
           <span style={{ fontSize: '10px', color: C.muted }}>{window.location.host}/onboarding</span>

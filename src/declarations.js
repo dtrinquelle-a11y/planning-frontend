@@ -22,10 +22,10 @@ export function mondayOf(iso) {
   return d;
 }
 
-// Cloture : lundi 6 h qui suit la semaine du creneau (meme regle que la base)
+// Cloture : lundi 12 h qui suit la semaine du creneau (meme regle que la base)
 export function lockAt(iso) {
   const d = mondayOf(iso);
-  d.setDate(d.getDate() + 7); d.setHours(6, 0, 0, 0);
+  d.setDate(d.getDate() + 7); d.setHours(12, 0, 0, 0);
   return d;
 }
 

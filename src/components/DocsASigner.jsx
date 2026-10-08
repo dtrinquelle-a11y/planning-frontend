@@ -43,7 +43,7 @@ function YouTubePlayer({ videoId, onEnded, onFallback }) {
   );
 }
 
-// Onglet "A signer" de l'espace salarie
+// Onglet "Documents communs" de l'espace salarie : documents a signer, puis documents en simple consultation
 export default function DocsASigner({ employee, readOnly, onChange }) {
   const { colors: C } = useTheme();
   const [docs, setDocs] = useState([]);
@@ -85,20 +85,22 @@ export default function DocsASigner({ employee, readOnly, onChange }) {
   if (loading) return <div style={{ color: C.muted, fontSize: '12px', textAlign: 'center', padding: '30px' }}>Chargement...</div>;
   if (!docs.length) return (
     <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '24px', textAlign: 'center', color: C.muted, fontSize: '12px' }}>
-      Aucun document à signer pour le moment.
+      Aucun document pour le moment.
     </div>
   );
 
-  const rows = docs.map(d => ({ doc: d, st: docStatus(d, sigs) }))
+  const infoDocs = docs.filter(d => !d.requires_signature);
+  const rows = docs.filter(d => d.requires_signature).map(d => ({ doc: d, st: docStatus(d, sigs) }))
     .sort((a, b) => (a.st.state === 'signe' ? 1 : 0) - (b.st.state === 'signe' ? 1 : 0));
   const pending = rows.filter(r => r.st.state !== 'signe').length;
 
   return (
     <div>
-      <div style={{ fontSize: '12px', color: C.muted, marginBottom: '14px', lineHeight: 1.6 }}>
+      {rows.length > 0 && <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', marginBottom: '8px' }}>À LIRE ET SIGNER</div>}
+      {rows.length > 0 && <div style={{ fontSize: '12px', color: C.muted, marginBottom: '14px', lineHeight: 1.6 }}>
         {pending ? <><strong style={{ color: C.red }}>{pending} document{pending > 1 ? 's' : ''} à lire et signer.</strong> Ouvrez chaque document (ou regardez la vidéo jusqu'au bout), puis signez.</>
           : 'Tous vos documents sont signés. Merci !'}
-      </div>
+      </div>}
       {msg && <div style={{ fontSize: '12px', color: msg.err ? C.red : C.green, marginBottom: '10px' }}>{msg.text}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {rows.map(({ doc, st }) => {
@@ -159,6 +161,33 @@ export default function DocsASigner({ employee, readOnly, onChange }) {
           );
         })}
       </div>
+
+      {infoDocs.length > 0 && (
+        <>
+          <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', margin: (rows.length ? '22px' : '0') + ' 0 8px' }}>À CONSULTER</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {infoDocs.map(doc => {
+              const isOpen = openId === doc.id;
+              const vid = doc.kind === 'video' ? youtubeId(doc.video_url) : null;
+              return (
+                <div key={doc.id} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '18px' }}>{doc.kind === 'video' ? '🎬' : '📘'}</span>
+                    <div style={{ flex: 1, minWidth: '180px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>{doc.title}</div>
+                      {doc.description && <div style={{ fontSize: '11px', color: C.muted, whiteSpace: 'pre-wrap' }}>{doc.description}</div>}
+                    </div>
+                    {doc.kind === 'video' && vid
+                      ? <button onClick={() => setOpenId(isOpen ? null : doc.id)} style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '6px', padding: '6px 12px', color: C.purple, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>{isOpen ? 'Fermer' : '▶ Regarder'}</button>
+                      : <button onClick={() => doc.kind === 'video' ? window.open(doc.video_url, '_blank') : openCommonFile(doc)} style={{ background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '6px', padding: '6px 12px', color: C.purple, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>Ouvrir</button>}
+                  </div>
+                  {isOpen && vid && <div style={{ marginTop: '12px' }}><YouTubePlayer videoId={vid} onEnded={() => {}} onFallback={() => window.open(doc.video_url, '_blank')} /></div>}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }

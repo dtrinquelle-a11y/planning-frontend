@@ -214,7 +214,7 @@ export default function DossiersRH() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: C.purpleLight, border: '1px solid ' + C.purple + '44', borderRadius: '8px', padding: '8px 14px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '11px', color: C.purple }}>Lien onboarding :</span>
-          <span style={{ fontSize: '10px', color: C.muted }}>...up.railway.app/onboarding</span>
+          <span style={{ fontSize: '10px', color: C.muted }}>{window.location.host}/onboarding</span>
           <span style={{ fontSize: '11px', color: C.purple }}>· Code :</span>
           {codeEdit ? (
             <>

@@ -6,6 +6,7 @@ import html2canvas from 'html2canvas';
 import supabase from '../supabase';
 import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod, overlaps, isActive } from '../absences';
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
+import { API } from '../config';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
 const DOC_GROUPS = [
@@ -20,7 +21,6 @@ const MOIS = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','
 // "2026-05" -> "Mai 2026" (sinon texte tel quel)
 function formatPeriode(p){const m=/^(\d{4})-(\d{2})$/.exec(p||'');return m?MOIS[parseInt(m[2],10)-1]+' '+m[1]:(p||'');}
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const SHIFTS = [
   { id: 'matin', label: 'Matin', bg: '#EEF2FF', border: '#7C6FCD', text: '#4338CA' },
   { id: 'apres_midi', label: 'Apres-midi', bg: '#F0FDF4', border: '#2DB87A', text: '#166534' },

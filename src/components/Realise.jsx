@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
 import supabase from '../supabase';
+import { API } from '../config';
 
 // Photo de pointage : miniature au survol (lien temporaire de 5 min), clic pour l'ouvrir en grand
 function PhotoThumb({ photo, C }) {
@@ -30,7 +31,6 @@ function PhotoThumb({ photo, C }) {
   );
 }
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const months = ['jan', 'fev', 'mars', 'avr', 'mai', 'juin', 'juil', 'aout', 'sep', 'oct', 'nov', 'dec'];
 

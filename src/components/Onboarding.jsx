@@ -292,7 +292,7 @@ export default function Onboarding() {
             <div style={{ marginBottom: '16px' }}>
               <label style={lbl}>CODE D'INVITATION</label>
               <input style={{ ...inp, fontSize: '18px', textAlign: 'center', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 600 }}
-                placeholder="HPA-2026" value={code} onChange={e => setCode(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && validateCode()} />
+                placeholder="Votre code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && validateCode()} />
             </div>
             {error && <div style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: C.red, marginBottom: '14px' }}>{error}</div>}
             <button onClick={validateCode} disabled={loading || !code}

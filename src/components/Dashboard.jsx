@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useTheme } from '../ThemeContext';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const AVATAR_COLORS = ['#7C6FCD', '#2DB87A', '#F5A623', '#E85D5D'];
 
 function getInitials(first, last) { return (first?.[0] || '') + (last?.[0] || ''); }

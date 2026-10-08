@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const MOIS = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
 
 // Mois precedent par defaut (c'est celui qu'on transmet au comptable)

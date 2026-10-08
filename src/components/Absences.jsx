@@ -3,8 +3,8 @@ import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 import { absenceType, absencePeriod, absenceDays, frDate, isModified, statusInfo, requestedPeriod, overlaps, isActive } from '../absences';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 
 // Page manager : demandes d'absence a traiter et historique
 export default function Absences() {

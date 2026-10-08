@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const SERVICES = ['Tous', 'Accueil', 'Housekeeping', 'Technique', 'Restauration'];
 const SERVICE_COLORS = { 'Accueil': '#7C6FCD', 'Housekeeping': '#2DB87A', 'Technique': '#F5A623', 'Restauration': '#E85D5D' };
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0','#C084FC','#34D399'];

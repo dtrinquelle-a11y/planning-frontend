@@ -6,8 +6,8 @@ import html2canvas from 'html2canvas';
 import supabase from '../supabase';
 import { absenceType, absenceCovers } from '../absences';
 import { checkEmployeeWeek } from '../legalChecks';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 

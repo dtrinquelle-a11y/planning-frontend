@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 const DOC_TYPES = [
   { id: 'bulletin_paie', label: 'Bulletin de paie', icon: '💰' },
   { id: 'contrat', label: 'Contrat', icon: '📄' },

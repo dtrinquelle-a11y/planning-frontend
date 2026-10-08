@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTheme } from '../ThemeContext';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
-const APP_URL = 'https://planning-frontend-production.up.railway.app';
+// Adresse du site lui-meme (suit automatiquement un changement d'hebergeur ou de domaine)
+const APP_URL = window.location.origin;
 
 export default function QRCodePage() {
   const { colors: C } = useTheme();

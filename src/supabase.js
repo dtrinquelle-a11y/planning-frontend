@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 
-export const SUPABASE_URL = 'https://akulbjtaflucxkuwptjv.supabase.co';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWxianRhZmx1Y3hrdXdwdGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTQ1MjAsImV4cCI6MjA5NDY5MDUyMH0.bmG_qktEnmerg_pXp8PqLnMn2Z2EvKX5VTfaYAxEaSg';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, BACKEND_URL } from './config';
+// Reexporte pour les modules qui les importaient d'ici (ex : onboarding)
+export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Chaque appel au backend porte le jeton de connexion : le backend verifie qui appelle et filtre selon le role
-const BACKEND_URL = 'https://mon-planning-production.up.railway.app';
 // Un seul renouvellement de session a la fois, meme si plusieurs requetes echouent en meme temps
 let refreshing = null;
 function refreshSession() {

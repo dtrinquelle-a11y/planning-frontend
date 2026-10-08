@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import axios from 'axios';
+import Sauvegardes from './Sauvegardes';
+import { API } from '../config';
 
-const API = 'https://mon-planning-production.up.railway.app/api';
 
 const SHIFT_COLORS = {
   matin:      { bg: '#EEF2FF', border: '#7C6FCD', text: '#4338CA' },
@@ -58,6 +59,7 @@ export default function Parametrage() {
     { id: 'geoloc', label: '📍 Géoloc', icon: '📍' },
     { id: 'cc_hpa', label: '⚖️ CC HPA', icon: '⚖️' },
     { id: 'pointeuse', label: '📷 Pointeuse', icon: '📷' },
+    { id: 'sauvegardes', label: '💾 Sauvegardes', icon: '💾' },
   ];
 
   return (
@@ -271,6 +273,8 @@ export default function Parametrage() {
               )}
 
               {/* POINTEUSE */}
+              {section === 'sauvegardes' && <Sauvegardes />}
+
               {section === 'pointeuse' && (
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Paramètres Pointeuse</div>

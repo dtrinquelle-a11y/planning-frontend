@@ -19,6 +19,7 @@ import Absences from './components/Absences';
 import ExportPaie from './components/ExportPaie';
 import Realise from './components/Realise';
 import { fetchManagerBadges, fetchEmployeeBadges, Badge } from './badges';
+import { fetchTimeclockEnabled } from './declarations';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -32,6 +33,7 @@ function AppInner() {
   const isReset = window.location.pathname === '/reinitialiser';
   const authRequestId = useRef(0);
   const [badges, setBadges] = useState({}); // pastilles : nombre d'elements a traiter par onglet
+  const [timeclockOn, setTimeclockOn] = useState(true); // pointeuse active (sinon : horaires declares)
   const justLoggedInRef = useRef(false);
 
   useEffect(() => {
@@ -152,9 +154,10 @@ function AppInner() {
     if (!session || !badgeRole) return;
     const manager = badgeRole === 'admin' || badgeRole === 'manager';
     const refresh = () => (manager ? fetchManagerBadges() : fetchEmployeeBadges(badgeEmpId))
-      .then(b => setBadges(manager ? b : { salarie: b.absences + b.documents + b.signer, ...b }))
+      .then(b => setBadges(manager ? b : { salarie: b.absences + b.documents + b.signer + b.horaires, ...b }))
       .catch(() => {});
     refresh();
+    fetchTimeclockEnabled().then(setTimeclockOn).catch(() => {});
     const timer = setInterval(refresh, 60 * 1000);
     window.addEventListener('badges-refresh', refresh);
     return () => { clearInterval(timer); window.removeEventListener('badges-refresh', refresh); };
@@ -198,8 +201,8 @@ function AppInner() {
       ]
     : [
         { id: 'salarie', label: 'Mon Planning' },
-        { id: 'pointage', label: 'Pointeuse' },
-        
+        // Pointeuse desactivee : les horaires se valident dans Mon Planning > Mes horaires
+        ...(timeclockOn ? [{ id: 'pointage', label: 'Pointeuse' }] : []),
       ];
 
   return (

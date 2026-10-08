@@ -74,7 +74,7 @@ export default function Realise() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekOffset]);
 
-  const ANOM_COLOR = { absent: C.red, oubli_depart: C.red, oubli_arrivee: C.red, retard: C.amber, depart_anticipe: C.amber, hors_planning: C.purple };
+  const ANOM_COLOR = { absent: C.red, oubli_depart: C.red, oubli_arrivee: C.red, retard: C.amber, depart_anticipe: C.amber, hors_planning: C.purple, a_valider: C.muted, declare_modifie: C.purple, declare_non_travaille: C.red, declare_auto: C.amber };
   const rows = (data?.rows || []).filter(r => !onlyIssues || r.anomalies > 0);
   const tot = (data?.rows || []).reduce((t, r) => ({ planned: t.planned + r.planned_min, worked: t.worked + r.worked_min, anomalies: t.anomalies + r.anomalies, retards: t.retards + r.retards }), { planned: 0, worked: 0, anomalies: 0, retards: 0 });
   const btn = { background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', color: C.text, cursor: 'pointer', padding: '4px 10px', fontFamily: 'inherit', fontSize: '13px' };
@@ -159,7 +159,7 @@ export default function Realise() {
                       return (
                         <td key={d} style={{ ...cell, background: bad ? C.amberLight : 'transparent' }}>
                           {c.planned && <div style={{ color: C.muted }}>prévu {c.planned}</div>}
-                          <div style={{ fontWeight: 500 }}>{c.actual ? 'pointé ' + c.actual : <span style={{ color: C.muted }}>non pointé</span>}</div>
+                          <div style={{ fontWeight: 500 }}>{c.actual ? (c.declared ? 'déclaré ' : 'pointé ') + c.actual : <span style={{ color: C.muted }}>{data.declarative ? 'non déclaré' : 'non pointé'}</span>}</div>
                           {c.photos && c.photos.length > 0 && <div style={{ margin: '3px 0' }}>{c.photos.map((ph, i) => <PhotoThumb key={i} photo={ph} C={C} />)}</div>}
                           {c.anomalies.map((a, i) => <div key={i} style={{ color: ANOM_COLOR[a.code] || C.amber, fontSize: '10px', fontWeight: 600 }}>⚠ {a.label}</div>)}
                         </td>

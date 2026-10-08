@@ -21,6 +21,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [cameraError, setCameraError] = useState('');
   const [photoEnabled, setPhotoEnabled] = useState(true); // depuis Supabase settings
+  const [enabled, setEnabled] = useState(true); // interrupteur Parametrage > Pointeuse
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -38,7 +39,7 @@ export default function Pointeuse({ employeeId, employeeName }) {
   async function loadPhotoSetting() {
     try {
       const { data } = await supabase.from('app_settings').select('value').eq('key', 'pointeuse').single();
-      if (data?.value) setPhotoEnabled(data.value.photo_enabled !== false);
+      if (data?.value) { setPhotoEnabled(data.value.photo_enabled !== false); setEnabled(data.value.enabled !== false); }
     } catch {}
   }
 
@@ -150,6 +151,16 @@ export default function Pointeuse({ employeeId, employeeName }) {
   const geoLabel = geoStatus==='ok'?'Sur site ('+distance+'m)':geoStatus==='far'?'Hors site ('+distance+'m)':geoStatus==='denied'?'Géoloc refusée':'Localisation...';
   const now = new Date();
   const timeStr = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+
+  if (!enabled) return (
+    <div style={{minHeight:'60vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px',fontFamily:'inherit'}}>
+      <div style={{maxWidth:'420px',textAlign:'center',background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'28px'}}>
+        <div style={{fontSize:'32px',marginBottom:'10px'}}>⏸️</div>
+        <div style={{fontSize:'15px',fontWeight:600,color:C.text,marginBottom:'8px'}}>Pointeuse désactivée</div>
+        <div style={{fontSize:'13px',color:C.muted,lineHeight:1.6}}>Les salariés valident leurs horaires à la fin de chaque journée dans <strong>Mon planning › Mes horaires</strong>.</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",padding:'20px',display:'flex',flexDirection:'column',alignItems:'center'}}>

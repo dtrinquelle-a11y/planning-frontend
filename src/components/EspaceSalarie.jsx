@@ -8,6 +8,8 @@ import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, 
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 import { API } from '../config';
 import DocsASigner from './DocsASigner';
+import MesHoraires from './MesHoraires';
+import { fetchTimeclockEnabled } from '../declarations';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
 const DOC_GROUPS = [
@@ -56,6 +58,8 @@ export default function EspaceSalarie({ profile }) {
   const [absSaving,setAbsSaving]=useState(false);
   const [absMsg,setAbsMsg]=useState(null);
   const [tabBadges,setTabBadges]=useState({});
+  const [declarative,setDeclarative]=useState(false); // pointeuse desactivee : onglet "Mes horaires"
+  useEffect(()=>{fetchTimeclockEnabled().then(on=>setDeclarative(!on)).catch(()=>{});},[]);
   // Heures modulees validees par le manager (periode de modulation en cours : 1er nov -> 31 oct)
   const [modulees,setModulees]=useState([]);
   const [recupMin,setRecupMin]=useState(0); // heures de recuperation prises sur la periode (jusqu'a aujourd'hui)
@@ -237,7 +241,7 @@ export default function EspaceSalarie({ profile }) {
           </div>
         )}
         <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
-          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},{id:'documents',label:'Mes documents'},{id:'signer',label:'À signer'}].map(t=>(
+          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires'}]:[]),{id:'documents',label:'Mes documents'},{id:'signer',label:'À signer'}].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400,position:'relative'}}>{t.label}<Badge count={tab===t.id?0:tabBadges[t.id]} style={{top:'0px',right:'-4px'}}/></button>
           ))}
         </div>
@@ -249,6 +253,12 @@ export default function EspaceSalarie({ profile }) {
             ✍️ {tabBadges.signer} document{tabBadges.signer>1?'s':''} obligatoire{tabBadges.signer>1?'s':''} à lire et signer →
           </div>
         )}
+        {tab==='planning'&&!isManager&&declarative&&tabBadges.horaires>0&&(
+          <div onClick={()=>setTab('horaires')} style={{cursor:'pointer',background:C.amberLight,border:'1px solid '+C.amber+'44',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'12px',color:C.amber,fontWeight:600}}>
+            ⏱️ {tabBadges.horaires} journée{tabBadges.horaires>1?'s':''} à valider : avez-vous réalisé les horaires prévus ? →
+          </div>
+        )}
+        {tab==='horaires'&&<MesHoraires key={selectedEmp.id} employee={selectedEmp} asManager={isManager}/>}
         {tab==='signer'&&<DocsASigner key={selectedEmp.id} employee={selectedEmp} readOnly={isManager}/>}
         {tab==='planning'&&(
           <div>

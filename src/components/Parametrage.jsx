@@ -336,7 +336,39 @@ export default function Parametrage() {
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Configuration de la pointeuse et gestion des photos.</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-                    <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px' }}>
+                    {/* Interrupteur : pointeuse ou horaires declares par les salaries */}
+                    {(() => {
+                      const on = settings.pointeuse?.enabled !== false;
+                      // Passage en mode declaratif : la date sert de point de depart a la cloture automatique des semaines
+                      const toggle = () => setSettings(prev => ({ ...prev, pointeuse: { ...prev.pointeuse, enabled: !on,
+                        ...(on ? { declaratif_depuis: new Date().toISOString().slice(0, 10) } : {}) } }));
+                      return (
+                        <div style={{ background: C.card, border: '1px solid ' + (on ? C.border : C.amber), borderRadius: '10px', padding: '20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>Pointeuse</div>
+                              <div style={{ fontSize: '11px', color: C.muted, marginTop: '4px' }}>{on ? 'Les salariés pointent leur arrivée et leur départ (QR code).' : 'Les salariés valident eux-mêmes leurs horaires en fin de journée.'}</div>
+                            </div>
+                            <button onClick={toggle} role="switch" aria-checked={on} title={on ? 'Désactiver la pointeuse' : 'Activer la pointeuse'}
+                              style={{ position: 'relative', width: '52px', height: '28px', borderRadius: '14px', border: 'none', cursor: 'pointer', background: on ? C.green : C.border, flexShrink: 0, transition: 'background .2s' }}>
+                              <span style={{ position: 'absolute', top: '3px', left: on ? '27px' : '3px', width: '22px', height: '22px', borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.3)', transition: 'left .2s' }} />
+                            </button>
+                          </div>
+                          {!on && (
+                            <div style={{ marginTop: '12px', fontSize: '12px', color: C.text, background: C.amberLight, borderRadius: '8px', padding: '12px', lineHeight: 1.7 }}>
+                              <strong>Pointeuse sur OFF : horaires déclarés</strong><br />
+                              · À la fin de chaque créneau, le salarié répond dans « Mon planning › Mes horaires » : <em>avez-vous réalisé les horaires prévus ?</em> Oui, ou Non et il corrige ses heures.<br />
+                              · Le dimanche à 18 h, chacun reçoit un email récapitulatif de sa semaine avec les journées restant à valider.<br />
+                              · Le lundi à 6 h, la semaine est clôturée : plus aucune modification par le salarié, et les journées non validées sont retenues telles que prévues.<br />
+                              · Les heures déclarées alimentent le Réalisé, l'export de paie et le compteur de modulation. Vous pouvez corriger à tout moment (Espace salarié › Horaires).
+                              {settings.pointeuse?.declaratif_depuis && <><br /><span style={{ color: C.muted }}>Mode actif depuis le {settings.pointeuse.declaratif_depuis.split('-').reverse().join('/')}.</span></>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '20px', opacity: settings.pointeuse?.enabled === false ? 0.5 : 1 }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '14px' }}>Photo au pointage</div>
                       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '12px', background: C.bg, borderRadius: '8px', border: '1px solid ' + C.border }}>
                         <div>

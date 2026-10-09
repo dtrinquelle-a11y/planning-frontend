@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 import { NON_WORK, DECL_STATUS, isoDay, hm, mondayOf, lockAt, shiftEnd, canAnswer, absentOn } from '../declarations';
+import useIsMobile from '../useIsMobile';
 
 const JOURS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
 const MOIS = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
@@ -18,6 +19,7 @@ const fmtH = min => Math.floor(min / 60) + 'h' + String(min % 60).padStart(2, '0
 // Manager (asManager) : peut corriger a tout moment, meme apres la cloture du lundi.
 export default function MesHoraires({ employee, asManager, onChange }) {
   const { colors: C } = useTheme();
+  const mobile = useIsMobile();
   const [shifts, setShifts] = useState([]);
   const [decls, setDecls] = useState({});
   const [absences, setAbsences] = useState([]);
@@ -83,7 +85,10 @@ export default function MesHoraires({ employee, asManager, onChange }) {
   shifts.forEach(s => { const k = isoDay(mondayOf(String(s.work_date).slice(0, 10))); (weeks[k] = weeks[k] || []).push(s); });
   const keys = Object.keys(weeks).sort().reverse();
   const inp = { background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 8px', color: C.text, fontSize: '12px', fontFamily: 'inherit', boxSizing: 'border-box' };
-  const btn = { border: '1px solid ' + C.border, background: C.card, borderRadius: '6px', padding: '6px 12px', color: C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 };
+  const btn = mobile
+    ? { border: '1px solid ' + C.border, background: C.card, borderRadius: '12px', padding: '13px 18px', color: C.text, cursor: 'pointer', fontSize: '16px', fontFamily: 'inherit', fontWeight: 600 }
+    : { border: '1px solid ' + C.border, background: C.card, borderRadius: '6px', padding: '6px 12px', color: C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 };
+  if (mobile) inp.fontSize = '16px'; // 16 px : evite le zoom automatique de l'iPhone sur les champs
 
   return (
     <div>
@@ -144,9 +149,9 @@ export default function MesHoraires({ employee, asManager, onChange }) {
                       {!editing && open && !absent && (
                         d ? <button onClick={() => setEdit({ id: s.id, start: hm(d.start_time || s.start_time), end: hm(d.end_time || s.end_time), brk: String(d.status === 'non_travaille' ? s.break_minutes : d.break_minutes), comment: d.status === 'auto' ? '' : d.comment || '', off: d.status === 'non_travaille' })} style={{ ...btn, fontWeight: 500 }}>Modifier</button>
                           : (
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <button disabled={busy === s.id} onClick={() => declare(s, 'conforme')} style={{ ...btn, background: C.green, borderColor: C.green, color: '#fff' }}>Oui</button>
-                              <button disabled={busy === s.id} onClick={() => setEdit({ id: s.id, start: hm(s.start_time), end: hm(s.end_time), brk: String(s.break_minutes || 0), comment: '', off: false })} style={btn}>Non</button>
+                            <div style={{ display: 'flex', gap: mobile ? '10px' : '6px', width: mobile ? '100%' : 'auto' }}>
+                              <button disabled={busy === s.id} onClick={() => declare(s, 'conforme')} style={{ ...btn, flex: mobile ? 1 : 'none', background: C.green, borderColor: C.green, color: '#fff' }}>{mobile ? '✓ Oui' : 'Oui'}</button>
+                              <button disabled={busy === s.id} onClick={() => setEdit({ id: s.id, start: hm(s.start_time), end: hm(s.end_time), brk: String(s.break_minutes || 0), comment: '', off: false })} style={{ ...btn, flex: mobile ? 1 : 'none' }}>{mobile ? '✗ Non, corriger' : 'Non'}</button>
                             </div>
                           )
                       )}

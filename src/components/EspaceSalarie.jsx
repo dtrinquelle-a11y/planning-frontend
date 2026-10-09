@@ -10,6 +10,7 @@ import { API } from '../config';
 import DocsASigner from './DocsASigner';
 import MesHoraires from './MesHoraires';
 import { fetchTimeclockEnabled } from '../declarations';
+import useIsMobile, { isMobileNow } from '../useIsMobile';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
 const DOC_GROUPS = [
@@ -41,13 +42,15 @@ function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
 function getMonday(offset){const now=new Date();const day=now.getDay();const diff=now.getDate()-day+(day===0?-6:1)+offset*7;const mon=new Date(now);mon.setDate(diff);mon.setHours(0,0,0,0);return mon;}
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
 
-export default function EspaceSalarie({ profile }) {
+export default function EspaceSalarie({ profile, onOpenPointeuse }) {
   const { colors: C } = useTheme();
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const ownEmployee = profile?.employees || null;
   const [employees,setEmployees]=useState([]);
   const [selectedEmp,setSelectedEmp]=useState(null);
-  const [tab,setTab]=useState('planning');
+  // Salarie sur telephone : on arrive sur un accueil a gros boutons
+  const [tab,setTab]=useState(()=>(!(profile?.role==='admin'||profile?.role==='manager')&&isMobileNow())?'accueil':'planning');
+  const mobile=useIsMobile();
   const [weekOffset,setWeekOffset]=useState(0);
   const [shifts,setShifts]=useState([]);
   const [modulation,setModulation]=useState(null);
@@ -210,9 +213,70 @@ export default function EspaceSalarie({ profile }) {
   const modulationColor=modulation?.statut==='majoration_50'?C.red:modulation?.statut==='majoration_25'?C.amber:C.green;
   const inp={width:'100%',background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'8px 10px',color:C.text,fontSize:'13px',fontFamily:'inherit',boxSizing:'border-box'};
 
+  // Affichage simplifie : salarie sur telephone
+  const simple=!isManager&&mobile;
+  const TABS=[{id:'planning',label:'Mon planning',icon:'📅'},{id:'heures',label:'Mes heures',icon:'📊'},{id:'absences',label:'Absences',icon:'🏖️'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires',icon:'⏱️'}]:[]),{id:'documents',label:'Mes documents',icon:'📄'},{id:'signer',label:'Documents communs',icon:'📚'}];
+  const nextShiftCard=nextShift&&(
+    <div style={{background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:simple?'14px':'8px',padding:simple?'14px 16px':'10px 14px',display:'flex',alignItems:'center',gap:'12px',marginBottom:'14px'}}>
+      <div style={{fontSize:'20px',color:C.green}}>→</div>
+      <div>
+        <div style={{fontSize:'10px',color:C.green,letterSpacing:'0.08em',marginBottom:'2px'}}>{nextShift.daysAway===0?"AUJOURD'HUI":nextShift.daysAway===1?'DEMAIN':'DANS '+nextShift.daysAway+' JOURS'}</div>
+        <div style={{fontSize:simple?'16px':'13px',fontWeight:simple?600:500,color:C.text}}>{SHIFTS.find(s=>s.id===nextShift.shift.shift_type)?.label||'Creneau'} · {nextShift.shift.start_time?.slice(0,5)} – {nextShift.shift.end_time?.slice(0,5)}</div>
+        {nextShift.shift.note&&<div style={{fontSize:'11px',color:C.muted,fontStyle:'italic',marginTop:'2px'}}>{nextShift.shift.note}</div>}
+        <div style={{fontSize:'10px',color:C.muted}}>{nextShift.date.getDate()} {months[nextShift.date.getMonth()]}</div>
+      </div>
+    </div>
+  );
+
+  // Accueil mobile : gros boutons, Planning et Mes horaires (ou Pointer) en premier
+  if(simple&&tab==='accueil'){
+    const big=(icon,label,sub,onClick,color,badge)=>(
+      <button onClick={onClick} style={{position:'relative',width:'100%',display:'flex',alignItems:'center',gap:'16px',padding:'20px',minHeight:'88px',borderRadius:'18px',border:'none',background:color,color:'#fff',cursor:'pointer',fontFamily:'inherit',textAlign:'left',boxShadow:'0 6px 18px '+color+'55',marginBottom:'12px'}}>
+        <span style={{fontSize:'34px',lineHeight:1}}>{icon}</span>
+        <span style={{flex:1}}><span style={{display:'block',fontSize:'19px',fontWeight:700}}>{label}</span>{sub&&<span style={{display:'block',fontSize:'13px',opacity:0.9,marginTop:'2px'}}>{sub}</span>}</span>
+        <span style={{fontSize:'22px',opacity:0.8}}>›</span>
+        <Badge count={badge} style={{top:'-6px',right:'-4px',minWidth:'24px',height:'24px',lineHeight:'24px',fontSize:'13px',borderRadius:'12px'}}/>
+      </button>
+    );
+    const small=t=>(
+      <button key={t.id} onClick={()=>setTab(t.id)} style={{position:'relative',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'8px',minHeight:'96px',padding:'14px 8px',borderRadius:'16px',border:'1px solid '+C.border,background:C.card,color:C.text,cursor:'pointer',fontFamily:'inherit',fontSize:'14px',fontWeight:600,boxShadow:C.shadow+' 0 2px 8px'}}>
+        <span style={{fontSize:'28px',lineHeight:1}}>{t.icon}</span>{t.label}
+        <Badge count={tabBadges[t.id]} style={{top:'-6px',right:'-4px'}}/>
+      </button>
+    );
+    const today=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+    return(
+      <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",padding:'18px 16px 28px'}}>
+        <div style={{fontSize:'22px',fontWeight:700,color:C.text}}>Bonjour {selectedEmp.first_name} 👋</div>
+        <div style={{fontSize:'13px',color:C.muted,marginBottom:'16px',textTransform:'capitalize'}}>{today}</div>
+        {nextShiftCard}
+        {big('📅','Mon planning',heuresPlanifiees.toFixed(1)+' h prévues cette semaine',()=>setTab('planning'),'#5B4FD6',0)}
+        {declarative
+          ? big('⏱️','Mes horaires',tabBadges.horaires>0?tabBadges.horaires+' journée'+(tabBadges.horaires>1?'s':'')+' à valider':'Tout est validé',()=>setTab('horaires'),tabBadges.horaires>0?'#D97706':'#16A34A',tabBadges.horaires)
+          : onOpenPointeuse&&big('📍','Pointer','Arrivée / départ',onOpenPointeuse,'#16A34A',0)}
+        {tabBadges.signer>0&&(
+          <div onClick={()=>setTab('signer')} style={{cursor:'pointer',background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'14px',padding:'14px 16px',marginBottom:'12px',fontSize:'14px',color:C.red,fontWeight:600}}>
+            ✍️ {tabBadges.signer} document{tabBadges.signer>1?'s':''} à lire et signer ›
+          </div>
+        )}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginTop:'4px'}}>
+          {TABS.filter(t=>t.id!=='planning'&&t.id!=='horaires').map(small)}
+        </div>
+        <div style={{textAlign:'center',marginTop:'22px'}}><a href="/confidentialite" target="_blank" rel="noreferrer" style={{fontSize:'12px',color:C.muted}}>Confidentialité</a></div>
+      </div>
+    );
+  }
+
   return(
     <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"}}>
-      <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'16px 20px',boxShadow:C.shadow+' 0 1px 4px'}}>
+      {simple&&(
+        // Telephone : barre de retour a l'accueil a la place de l'en-tete et des onglets
+        <div style={{position:'sticky',top:0,zIndex:20,background:C.card,borderBottom:'1px solid '+C.border,padding:'10px 12px',display:'flex',alignItems:'center',gap:'10px'}}>
+          <button onClick={()=>setTab('accueil')} style={{display:'flex',alignItems:'center',gap:'6px',padding:'10px 14px',borderRadius:'12px',border:'1px solid '+C.border,background:C.bg,color:C.text,cursor:'pointer',fontFamily:'inherit',fontSize:'15px',fontWeight:600}}>‹ Accueil</button>
+          <div style={{fontSize:'16px',fontWeight:700,color:C.text}}>{TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}</div>
+        </div>
+      )}
+      {!simple&&<div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'16px 20px',boxShadow:C.shadow+' 0 1px 4px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'10px'}}>
           <div style={{fontSize:'13px',fontWeight:600,color:C.text}}>Mon planning</div>
           {isManager&&(
@@ -229,25 +293,15 @@ export default function EspaceSalarie({ profile }) {
             <div style={{fontSize:'10px',color:C.muted}}>{selectedEmp.contract_hours}h / semaine · {selectedEmp.contract_type}</div>
           </div>
         </div>
-        {nextShift&&(
-          <div style={{background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:'8px',padding:'10px 14px',display:'flex',alignItems:'center',gap:'12px',marginBottom:'14px'}}>
-            <div style={{fontSize:'20px',color:C.green}}>→</div>
-            <div>
-              <div style={{fontSize:'10px',color:C.green,letterSpacing:'0.08em',marginBottom:'2px'}}>{nextShift.daysAway===0?"AUJOURD'HUI":nextShift.daysAway===1?'DEMAIN':'DANS '+nextShift.daysAway+' JOURS'}</div>
-              <div style={{fontSize:'13px',fontWeight:500,color:C.text}}>{SHIFTS.find(s=>s.id===nextShift.shift.shift_type)?.label||'Creneau'} · {nextShift.shift.start_time?.slice(0,5)} – {nextShift.shift.end_time?.slice(0,5)}</div>
-              {nextShift.shift.note&&<div style={{fontSize:'11px',color:C.muted,fontStyle:'italic',marginTop:'2px'}}>{nextShift.shift.note}</div>}
-              <div style={{fontSize:'10px',color:C.muted}}>{nextShift.date.getDate()} {months[nextShift.date.getMonth()]}</div>
-            </div>
-          </div>
-        )}
-        <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border}}>
-          {[{id:'planning',label:'Planning'},{id:'heures',label:'Mes heures'},{id:'absences',label:'Absences'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires'}]:[]),{id:'documents',label:'Mes documents'},{id:'signer',label:'Documents communs'}].map(t=>(
+        {nextShiftCard}
+        <div style={{display:'flex',gap:'0',borderBottom:'1px solid '+C.border,flexWrap:'wrap'}}>
+          {TABS.map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:'2px solid '+(tab===t.id?C.purple:'transparent'),color:tab===t.id?C.purple:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',letterSpacing:'0.06em',fontWeight:tab===t.id?600:400,position:'relative'}}>{t.label}<Badge count={tab===t.id?0:tabBadges[t.id]} style={{top:'0px',right:'-4px'}}/></button>
           ))}
         </div>
-      </div>
+      </div>}
 
-      <div style={{padding:'16px 20px',maxWidth:'700px',margin:'0 auto'}}>
+      <div style={{padding:simple?'14px 14px':'16px 20px',maxWidth:'700px',margin:'0 auto'}}>
         {tab==='planning'&&!isManager&&tabBadges.signer>0&&(
           <div onClick={()=>setTab('signer')} style={{cursor:'pointer',background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'12px',color:C.red,fontWeight:600}}>
             ✍️ {tabBadges.signer} document{tabBadges.signer>1?'s':''} obligatoire{tabBadges.signer>1?'s':''} à lire et signer →

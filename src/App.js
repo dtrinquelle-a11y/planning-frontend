@@ -20,6 +20,7 @@ import ExportPaie from './components/ExportPaie';
 import Realise from './components/Realise';
 import { fetchManagerBadges, fetchEmployeeBadges, Badge } from './badges';
 import { fetchTimeclockEnabled } from './declarations';
+import useIsMobile from './useIsMobile';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -34,6 +35,7 @@ function AppInner() {
   const authRequestId = useRef(0);
   const [badges, setBadges] = useState({}); // pastilles : nombre d'elements a traiter par onglet
   const [timeclockOn, setTimeclockOn] = useState(true); // pointeuse active (sinon : horaires declares)
+  const mobile = useIsMobile();
   const justLoggedInRef = useRef(false);
 
   useEffect(() => {
@@ -205,8 +207,21 @@ function AppInner() {
         ...(timeclockOn ? [{ id: 'pointage', label: 'Pointeuse' }] : []),
       ];
 
+  // Salarie sur telephone : barre compacte (logo, retour a l'accueil, theme, deconnexion), les gros boutons sont dans son espace
+  const simpleNav = !isManager && mobile;
+
   return (
     <div style={{ fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", background: C.bg, minHeight: '100vh' }}>
+      {simpleNav ? (
+        <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700 }}>HPA</span>
+          {page !== 'salarie' && <button onClick={() => setPage('salarie')} style={{ padding: '9px 14px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '15px', fontWeight: 600, fontFamily: 'inherit' }}>‹ Accueil</button>}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={toggle} aria-label="Changer de thème" style={{ width: '40px', height: '40px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, cursor: 'pointer', fontSize: '17px' }}>{darkMode ? '☀️' : '🌙'}</button>
+            <button onClick={handleLogout} style={{ height: '40px', padding: '0 14px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '14px', fontWeight: 500, fontFamily: 'inherit' }}>Quitter</button>
+          </div>
+        </nav>
+      ) : (
       <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.85)' : 'rgba(255,255,255,0.85)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '18px' }}>
           <span style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, letterSpacing: '0.02em', boxShadow: '0 2px 6px rgba(79,70,229,0.35)' }}>HPA</span>
@@ -224,11 +239,12 @@ function AppInner() {
           <button onClick={handleLogout} style={{ padding: '6px 12px', borderRadius: '999px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '12px', fontWeight: 500, fontFamily: 'inherit' }}>Déconnexion</button>
         </div>
       </nav>
+      )}
       <div style={{ padding: '0' }}>
         {page === 'dashboard' && <Dashboard profile={profile} />}
         {page === 'planning' && <Planning profile={profile} />}
         {page === 'timeline' && <Timeline profile={profile} />}
-        {page === 'salarie' && <EspaceSalarie profile={profile} />}
+        {page === 'salarie' && <EspaceSalarie profile={profile} onOpenPointeuse={timeclockOn ? () => setPage('pointage') : null} />}
         {page === 'qrcode' && isManager && <QRCodePage />}
         {page === 'pointage' && <Pointeuse employeeId={profile?.employees?.id || profile?.employee_id} employeeName={(profile?.employees?.first_name || profile?.first_name || '') + ' ' + (profile?.employees?.last_name || profile?.last_name || '')} />}
         {page === 'ged' && isManager && <DocumentsPage profile={profile} />}

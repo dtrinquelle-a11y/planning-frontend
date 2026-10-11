@@ -160,9 +160,13 @@ function AppInner() {
       .catch(() => {});
     refresh();
     fetchTimeclockEnabled().then(setTimeclockOn).catch(() => {});
+    // Derniere activite dans l'application (tableau de bord "Activite du jour" : qui ne s'est pas connecte)
+    const touch = () => supabase.rpc('touch_last_seen').then(() => {}, () => {});
+    touch();
+    const touchTimer = setInterval(touch, 5 * 60 * 1000);
     const timer = setInterval(refresh, 60 * 1000);
     window.addEventListener('badges-refresh', refresh);
-    return () => { clearInterval(timer); window.removeEventListener('badges-refresh', refresh); };
+    return () => { clearInterval(timer); clearInterval(touchTimer); window.removeEventListener('badges-refresh', refresh); };
   }, [session, badgeRole, badgeEmpId, page]);
 
   if (isOnboarding) return <Onboarding />;
@@ -230,7 +234,7 @@ function AppInner() {
         {navItems.map(p => (
           <button key={p.id} onClick={() => setPage(p.id)} className={page === p.id ? undefined : 'nav-tab'}
             style={{ position: 'relative', padding: '7px 12px', borderRadius: '999px', border: 'none', background: page === p.id ? C.purpleLight : 'transparent', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontWeight: page === p.id ? 600 : 500, fontFamily: 'inherit' }}
-          >{p.label}<Badge count={isManager ? (p.id === 'absences' ? badges.absences : p.id === 'dossiers' ? badges.dossiers : 0) : (p.id === 'salarie' ? badges.salarie : 0)} /></button>
+          >{p.label}<Badge count={isManager ? (p.id === 'absences' ? badges.absences : p.id === 'dossiers' ? badges.dossiers : p.id === 'realise' ? badges.realise : 0) : (p.id === 'salarie' ? badges.salarie : 0)} /></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button onClick={toggle} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: C.muted }}>{darkMode ? '☀️' : '🌙'}</button>
@@ -241,7 +245,7 @@ function AppInner() {
       </nav>
       )}
       <div style={{ padding: '0' }}>
-        {page === 'dashboard' && <Dashboard profile={profile} />}
+        {page === 'dashboard' && <Dashboard profile={profile} onNavigate={setPage} />}
         {page === 'planning' && <Planning profile={profile} />}
         {page === 'timeline' && <Timeline profile={profile} />}
         {page === 'salarie' && <EspaceSalarie profile={profile} onOpenPointeuse={timeclockOn ? () => setPage('pointage') : null} />}

@@ -4,7 +4,7 @@ import { countDocsToSign } from './signatures';
 import { countPendingDeclarations } from './declarations';
 
 // Pastilles "elements a traiter" (style iPhone) sur les onglets.
-// Manager : demandes d'absence en attente, dossiers d'onboarding a valider.
+// Manager : demandes d'absence en attente, dossiers d'onboarding a valider, horaires modifies par les salaries.
 // Salarie : decisions d'absence et documents non encore vus (memorise sur l'appareil).
 
 const seenKey = (kind, empId) => 'planning-hpa:vu:' + kind + ':' + empId;
@@ -21,12 +21,15 @@ export function markSeen(kind, empId) {
 }
 
 export async function fetchManagerBadges() {
-  const [abs, dossiers] = await Promise.all([
+  const [abs, dossiers, horaires] = await Promise.all([
     supabase.from('absence_requests').select('id', { count: 'exact', head: true }).eq('status', 'en_attente'),
     supabase.from('employees').select('id', { count: 'exact', head: true })
       .eq('onboarding_completed', true).eq('is_active', false).eq('is_temp', false),
+    // Horaires declares que le salarie a corriges ou sur lesquels il est revenu, depuis la derniere visite du Realise
+    supabase.from('work_declarations').select('id', { count: 'exact', head: true })
+      .eq('by_manager', false).or('status.eq.modifie,status.eq.non_travaille,revisions.gt.0').gt('declared_at', getSeen('realise', 'manager')),
   ]);
-  return { absences: abs.count || 0, dossiers: dossiers.count || 0 };
+  return { absences: abs.count || 0, dossiers: dossiers.count || 0, realise: horaires.count || 0 };
 }
 
 export async function fetchEmployeeBadges(empId) {

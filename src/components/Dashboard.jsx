@@ -3,6 +3,7 @@ import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useTheme } from '../ThemeContext';
 import { API } from '../config';
+import ActiviteJour from './ActiviteJour';
 
 const AVATAR_COLORS = ['#7C6FCD', '#2DB87A', '#F5A623', '#E85D5D'];
 
@@ -20,7 +21,13 @@ function getModulationLabel(statut, C) {
   return ['NORMAL', C.greenLight, C.green];
 }
 
-export default function Dashboard() {
+// Dashboard : sous-menus "Vue d'ensemble" et "Activite du jour"
+export default function Dashboard({ onNavigate }) {
+  const [tab, setTab] = useState('ensemble');
+  return <VueEnsemble tab={tab} setTab={setTab} onNavigate={onNavigate} />;
+}
+
+function VueEnsemble({ tab, setTab, onNavigate }) {
   const { colors: C } = useTheme();
   const [employees, setEmployees] = useState([]);
   const [modulation, setModulation] = useState([]);
@@ -94,10 +101,21 @@ export default function Dashboard() {
           <span style={{ color: C.muted, fontWeight: 400, fontSize: '13px' }}>/ Management</span>
         </div>
         <div style={{ fontSize: '11px', color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          {dateStr} · Période nov. 2025 → oct. 2026
+          {dateStr}
         </div>
       </div>
 
+      {/* Sous-menu */}
+      <div style={{ display: 'flex', gap: '4px', padding: '0 32px', background: C.card, borderBottom: '1px solid ' + C.border }}>
+        {[{ id: 'ensemble', label: "Vue d'ensemble" }, { id: 'jour', label: '⚡ Activité du jour' }].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: '10px 14px', background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === t.id ? C.purple : 'transparent'), color: tab === t.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', fontWeight: tab === t.id ? 600 : 500 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'jour' ? <div style={s.main}><ActiviteJour onNavigate={onNavigate} /></div> : (
       <div style={s.main}>
         <div style={s.sectionTitle}>Vue d'ensemble</div>
         <div style={s.statGrid}>
@@ -218,6 +236,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
       </div>
+      )}
     </div>
   );
 }

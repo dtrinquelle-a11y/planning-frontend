@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import supabase from '../supabase';
 import { ABSENCE_TYPES, absenceType, absencePeriod, absenceDays, absenceCovers, isModified, statusInfo, requestedPeriod, overlaps, isActive, frDate } from '../absences';
 import { fetchEmployeeBadges, markSeen, Badge } from '../badges';
 import { API } from '../config';
 import DocsASigner from './DocsASigner';
 import MesHoraires from './MesHoraires';
+import NotifCard from './NotifCard';
 import { fetchTimeclockEnabled } from '../declarations';
 import useIsMobile, { isMobileNow } from '../useIsMobile';
 
@@ -180,24 +180,62 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
   // Heures nettes de la semaine : pauses deduites, creneau apres minuit gere (meme calcul que le planning manager)
   function calcH(){return shifts.reduce((t,s)=>{if(!s.start_time||!s.end_time||s.shift_type==='repos'||s.shift_type==='recup')return t;const[sh,sm]=s.start_time.slice(0,5).split(':').map(Number);const[eh,em]=s.end_time.slice(0,5).split(':').map(Number);let mins=eh*60+em-sh*60-sm;if(mins<0)mins+=24*60;return t+Math.max(0,mins-parseInt(s.break_minutes||0))/60;},0);}
 
+  // PDF construit a partir des donnees (et non d'une capture d'ecran) : mise en page identique sur telephone et ordinateur
   async function exportPDF() {
-    if (!planningRef.current) return;
     setExportingPDF(true);
     try {
-      const canvas = await html2canvas(planningRef.current, {
-        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
-      });
-      const imgData = canvas.toDataURL('image/png');
+      const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const ratio = pdfWidth / canvas.width * 10;
-      pdf.setFontSize(10);
-      pdf.setTextColor(100);
-      pdf.text('Planning de ' + (selectedEmp?.first_name||'') + ' ' + (selectedEmp?.last_name||'') + ' · ' + weekLabel, 14, 10);
-      pdf.text('Le Bout du Monde · ' + new Date().toLocaleDateString('fr-FR'), pdfWidth - 14, 10, { align: 'right' });
-      pdf.addImage(imgData, 'PNG', 14, 16, canvas.width * ratio / 10, canvas.height * ratio / 10);
-      pdf.save('planning-' + (selectedEmp?.first_name||'').toLowerCase() + '-' + fmtDate(mon) + '.pdf');
-    } catch (err) { console.error(err); }
+      const W = pdf.internal.pageSize.getWidth(), M = 14;
+      const name = (selectedEmp?.first_name || '') + ' ' + (selectedEmp?.last_name || '');
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17); pdf.setTextColor(17, 24, 39);
+      pdf.text('Planning de ' + name, M, 20);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10); pdf.setTextColor(107, 114, 128);
+      pdf.text('Semaine du ' + mon.toLocaleDateString('fr-FR') + ' au ' + endMon.toLocaleDateString('fr-FR') + '  -  ' + (selectedEmp?.service || ''), M, 27);
+      pdf.text('Le Bout du Monde - édité le ' + new Date().toLocaleDateString('fr-FR'), W - M, 27, { align: 'right' });
+      let y = 36;
+      // En-tete du tableau
+      pdf.setFillColor(238, 240, 255); pdf.rect(M, y, W - 2 * M, 8, 'F');
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(67, 56, 202);
+      pdf.text('JOUR', M + 3, y + 5.5); pdf.text('CRÉNEAU', M + 40, y + 5.5); pdf.text('HORAIRES', M + 70, y + 5.5); pdf.text('NOTE', M + 122, y + 5.5);
+      y += 8;
+      DAYS.forEach((_, di) => {
+        const day = addDays(mon, di);
+        const list = getShiftsForDay(di);
+        const abs = weekAbsences.filter(a => absenceCovers(a, fmtDate(day)));
+        const lines = [
+          ...abs.map(a => ({ label: absenceType(a.type).label + (a.status === 'en_attente' ? ' (en attente)' : ''), hours: '', note: '', abs: true })),
+          ...list.map(sh => {
+            const def = SHIFTS.find(x => x.id === sh.shift_type) || SHIFTS[4];
+            const brk = parseInt(sh.break_minutes || 0, 10);
+            return { label: def.label, hours: sh.shift_type === 'repos' ? '' : sh.start_time.slice(0, 5) + ' - ' + sh.end_time.slice(0, 5) + (brk ? '  (pause ' + brk + ' min)' : ''), note: sh.note || '' };
+          }),
+        ];
+        // Notes longues : retour a la ligne dans leur colonne
+        const noteW = W - M - (M + 122) - 2;
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+        lines.forEach(l => { l.notes = l.note ? pdf.splitTextToSize(l.note, noteW) : []; l.h = Math.max(1, l.notes.length); });
+        const rowH = Math.max(1, lines.reduce((n, l) => n + l.h, 0)) * 5.5 + 4;
+        if (di % 2 === 1) { pdf.setFillColor(249, 250, 251); pdf.rect(M, y, W - 2 * M, rowH, 'F'); }
+        pdf.setDrawColor(229, 231, 239); pdf.line(M, y + rowH, W - M, y + rowH);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); pdf.setTextColor(17, 24, 39);
+        pdf.text(JOURS[di] + ' ' + String(day.getDate()).padStart(2, '0') + '/' + String(day.getMonth() + 1).padStart(2, '0'), M + 3, y + 6.5);
+        pdf.setFont('helvetica', 'normal');
+        if (!lines.length) { pdf.setTextColor(156, 163, 175); pdf.text('-', M + 40, y + 6.5); }
+        let off = 0;
+        lines.forEach(l => {
+          const ly = y + 6.5 + off * 5.5; off += l.h;
+          pdf.setTextColor(l.abs ? 37 : 17, l.abs ? 99 : 24, l.abs ? 235 : 39);
+          pdf.text(l.label, M + 40, ly);
+          pdf.setTextColor(17, 24, 39); pdf.text(l.hours, M + 70, ly);
+          pdf.setTextColor(107, 114, 128); l.notes.forEach((t, k) => pdf.text(t, M + 122, ly + k * 5.5));
+        });
+        y += rowH;
+      });
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.setTextColor(91, 79, 214);
+      pdf.text('Total prévu : ' + heuresPlanifiees.toFixed(1).replace('.', ',') + ' h', W - M, y + 9, { align: 'right' });
+      pdf.save('planning-' + (selectedEmp?.first_name || '').toLowerCase() + '-' + fmtDate(mon) + '.pdf');
+    } catch (err) { console.error(err); alert('Export PDF impossible : ' + err.message); }
     finally { setExportingPDF(false); }
   }
 
@@ -250,6 +288,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
         <div style={{fontSize:'22px',fontWeight:700,color:C.text}}>Bonjour {selectedEmp.first_name} 👋</div>
         <div style={{fontSize:'13px',color:C.muted,marginBottom:'16px',textTransform:'capitalize'}}>{today}</div>
         {nextShiftCard}
+        <NotifCard big/>
         {big('📅','Mon planning',heuresPlanifiees.toFixed(1)+' h prévues cette semaine',()=>setTab('planning'),'#5B4FD6',0)}
         {declarative
           ? big('⏱️','Mes horaires',tabBadges.horaires>0?tabBadges.horaires+' journée'+(tabBadges.horaires>1?'s':'')+' à valider':'Tout est validé',()=>setTab('horaires'),tabBadges.horaires>0?'#D97706':'#16A34A',tabBadges.horaires)
@@ -302,6 +341,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
       </div>}
 
       <div style={{padding:simple?'14px 14px':'16px 20px',maxWidth:'700px',margin:'0 auto'}}>
+        {tab==='planning'&&!isManager&&!simple&&<NotifCard/>}
         {tab==='planning'&&!isManager&&tabBadges.signer>0&&(
           <div onClick={()=>setTab('signer')} style={{cursor:'pointer',background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'12px',color:C.red,fontWeight:600}}>
             ✍️ {tabBadges.signer} document{tabBadges.signer>1?'s':''} obligatoire{tabBadges.signer>1?'s':''} à lire et signer →

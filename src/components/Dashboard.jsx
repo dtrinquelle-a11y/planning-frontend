@@ -5,6 +5,7 @@ import { useTheme } from '../ThemeContext';
 import CampLogo from '../CampLogo';
 import { API } from '../config';
 import ActiviteJour from './ActiviteJour';
+import NotifCard from './NotifCard';
 
 const AVATAR_COLORS = ['#7C6FCD', '#2DB87A', '#F5A623', '#E85D5D'];
 
@@ -116,8 +117,9 @@ function VueEnsemble({ tab, setTab, onNavigate }) {
         ))}
       </div>
 
-      {tab === 'jour' ? <div style={s.main}><ActiviteJour onNavigate={onNavigate} /></div> : (
+      {tab === 'jour' ? <div style={s.main}><NotifCard /><ActiviteJour onNavigate={onNavigate} /></div> : (
       <div style={s.main}>
+        <div style={{ marginTop: '16px' }}><NotifCard /></div>
         <div style={s.sectionTitle}>Vue d'ensemble</div>
         <div style={s.statGrid}>
           {[

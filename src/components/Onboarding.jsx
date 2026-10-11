@@ -246,7 +246,7 @@ export default function Onboarding() {
 
         <div style={{ textAlign: 'center', marginBottom: '28px', paddingTop: '20px' }}>
           <div style={{ fontSize: '20px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span></span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>HPA</span><span style={{ letterSpacing: '-0.01em' }}>Planning</span><img src="/logo-bout-du-monde.png" alt="Le Bout du Monde" style={{ height: '36px', width: 'auto', marginLeft: '6px' }} /></span>
           </div>
           <div style={{ fontSize: '12px', color: C.muted }}>Le Bout du Monde · {ACCESS_TOKEN ? 'Premier accès' : "Dossier d'embauche"}</div>
         </div>

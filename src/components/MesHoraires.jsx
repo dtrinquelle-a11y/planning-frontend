@@ -22,6 +22,7 @@ export default function MesHoraires({ employee, asManager, onChange }) {
   const mobile = useIsMobile();
   const [shifts, setShifts] = useState([]);
   const [decls, setDecls] = useState({});
+  const [history, setHistory] = useState({}); // declaration_id -> versions remplacees (plus anciennes d'abord)
   const [absences, setAbsences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState(null); // { id, start, end, brk, comment, off }
@@ -33,12 +34,16 @@ export default function MesHoraires({ employee, asManager, onChange }) {
     setLoading(true);
     const from = mondayOf(isoDay(new Date())); from.setDate(from.getDate() - 7 * weeksBack);
     const to = new Date(); to.setDate(to.getDate() + 1);
-    const [sh, dc, ab] = await Promise.all([
+    const [sh, dc, ab, hi] = await Promise.all([
       supabase.from('schedules').select('id, work_date, start_time, end_time, break_minutes, shift_type, note').eq('employee_id', employee.id)
         .gte('work_date', isoDay(from)).lte('work_date', isoDay(to)).order('work_date').order('start_time'),
       supabase.from('work_declarations').select('*').eq('employee_id', employee.id).gte('work_date', isoDay(from)),
       supabase.from('absence_requests').select('start_date, end_date').eq('employee_id', employee.id).eq('status', 'acceptee').gte('end_date', isoDay(from)),
+      supabase.from('work_declaration_history').select('*').eq('employee_id', employee.id).gte('work_date', isoDay(from)).order('declared_at'),
     ]);
+    const byDecl = {};
+    (hi.data || []).forEach(h => (byDecl[h.declaration_id] = byDecl[h.declaration_id] || []).push(h));
+    setHistory(byDecl);
     setShifts((sh.data || []).filter(s => !NON_WORK.includes(s.shift_type)));
     setDecls(Object.fromEntries((dc.data || []).map(d => [d.schedule_id, d])));
     setAbsences(ab.data || []);
@@ -125,9 +130,14 @@ export default function MesHoraires({ employee, asManager, onChange }) {
                 const ended = now >= new Date(shiftEnd(s).getTime() - 30 * 60000);
                 const open = asManager || (!locked && ended);
                 const st = d ? DECL_STATUS[d.status] : null;
+                // Le salarie est revenu sur sa premiere reponse : on garde la trace (visible aussi par le manager)
+                const revised = d && d.revisions > 0;
+                const first = revised ? (history[d.id] || []).find(h => !h.by_manager) : null;
+                const firstLabel = first ? (first.status === 'non_travaille' ? 'Non travaillé' : DECL_STATUS[first.status].label + ' ' + hm(first.start_time) + ' – ' + hm(first.end_time))
+                  + ', le ' + new Date(first.declared_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
                 const editing = edit && edit.id === s.id;
                 return (
-                  <div key={s.id} style={{ background: C.card, border: '1px solid ' + C.border, borderLeft: '4px solid ' + (st ? st.color : absent ? C.border : ended && !locked ? C.amber : C.border), borderRadius: '8px', padding: '10px 12px' }}>
+                  <div key={s.id} style={{ background: C.card, border: '1px solid ' + C.border, borderLeft: '4px solid ' + (revised ? '#DB2777' : st ? st.color : absent ? C.border : ended && !locked ? C.amber : C.border), borderRadius: '8px', padding: '10px 12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{ minWidth: '110px' }}>
                         <div style={{ fontSize: '12px', fontWeight: 600, color: C.text }}>{dayLabel(iso)}</div>
@@ -137,8 +147,10 @@ export default function MesHoraires({ employee, asManager, onChange }) {
                         {d ? (
                           <>
                             <span style={{ background: st.bg, color: st.color, padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>{st.label}</span>
+                            {revised && <span title={'Déclaration initiale : ' + firstLabel} style={{ background: '#FDF2F8', color: '#DB2777', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, marginLeft: '6px' }}>↺ Modifié{d.revisions > 1 ? ' ' + d.revisions + ' fois' : ''}</span>}
                             {d.status !== 'non_travaille' && <span style={{ fontSize: '12px', color: C.text, marginLeft: '8px' }}>{hm(d.start_time)} – {hm(d.end_time)}{parseInt(d.break_minutes, 10) ? ' · pause ' + d.break_minutes + ' min' : ''}</span>}
                             {d.comment && d.status !== 'auto' && <div style={{ fontSize: '11px', color: C.muted, fontStyle: 'italic', marginTop: '2px' }}>« {d.comment} »</div>}
+                            {revised && firstLabel && <div style={{ fontSize: '11px', color: '#DB2777', marginTop: '2px' }}>{asManager ? 'Déclaration initiale du salarié' : 'Votre première réponse'} : {firstLabel}</div>}
                             {d.by_manager && <div style={{ fontSize: '10px', color: C.muted, marginTop: '2px' }}>Corrigé par le responsable</div>}
                           </>
                         ) : absent ? <span style={{ fontSize: '11px', color: C.muted }}>Absence acceptée</span>

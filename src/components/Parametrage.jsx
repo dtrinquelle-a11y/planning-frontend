@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import axios from 'axios';
 import Sauvegardes from './Sauvegardes';
+import FermeturesEntreprise from './FermeturesEntreprise';
 import { API } from '../config';
 
 
@@ -324,6 +325,7 @@ export default function Parametrage() {
                         {saving ? 'Sauvegarde...' : '💾 Sauvegarder'}
                       </button>
                     </div>
+                    <FermeturesEntreprise />
                   </div>
                 );
               })()}

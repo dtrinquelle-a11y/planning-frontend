@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
+import { API } from '../config';
 
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
@@ -38,6 +40,8 @@ export default function DossiersRH() {
   const [toast, setToast] = useState('');
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
+  const [linkMail, setLinkMail] = useState(null);     // email saisi pour envoyer le lien (null = champ ferme)
+  const [sendingMail, setSendingMail] = useState(false);
   const [creatingLink, setCreatingLink] = useState(false);
   const [contractForm, setContractForm] = useState(null);
   const [savingContract, setSavingContract] = useState(false);
@@ -152,9 +156,24 @@ export default function DossiersRH() {
       const { data: token, error } = await supabase.rpc('create_access_link', { p_employee_id: emp.id });
       if (error) throw error;
       setAccessLink({ empId: emp.id, url: window.location.origin + '/onboarding?acces=' + token });
+      setLinkMail(null);
     } catch (err) {
       showToast('Erreur : ' + err.message, C.red);
     } finally { setCreatingLink(false); }
+  }
+
+  // Envoi du lien par email (adresse de la fiche proposee, modifiable)
+  async function mailAccessLink() {
+    const email = (linkMail || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast('Adresse email invalide', C.red); return; }
+    setSendingMail(true);
+    try {
+      await axios.post(API + '/employees/' + accessLink.empId + '/access-link-email', { email, url: accessLink.url });
+      showToast('Lien envoyé à ' + email);
+      setLinkMail(null);
+    } catch (err) {
+      showToast('Erreur : ' + (err.response?.data?.error || err.message), C.red);
+    } finally { setSendingMail(false); }
   }
 
   async function copyAccessLink() {
@@ -412,7 +431,22 @@ export default function DossiersRH() {
                       style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '8px 16px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
                       Copier
                     </button>
+                    <button onClick={() => setLinkMail(linkMail === null ? (selectedEmp.email && !selectedEmp.email.endsWith('@temp.fr') ? selectedEmp.email : '') : null)}
+                      style={{ background: C.card, border: '1px solid ' + C.purple + '66', borderRadius: '8px', padding: '8px 16px', color: C.purple, fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
+                      ✉️ Mail
+                    </button>
                   </div>
+                  {linkMail !== null && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', alignItems: 'center' }}>
+                      <input type="email" autoFocus placeholder="Email du salarié" value={linkMail} onChange={e => setLinkMail(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') mailAccessLink(); }} style={{ ...inp, flex: 1, minWidth: '220px' }} />
+                      <button onClick={mailAccessLink} disabled={sendingMail}
+                        style={{ background: C.green, border: 'none', borderRadius: '8px', padding: '8px 16px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: sendingMail ? 'not-allowed' : 'pointer', opacity: sendingMail ? 0.6 : 1 }}>
+                        {sendingMail ? 'Envoi...' : 'Envoyer'}
+                      </button>
+                      <button onClick={() => setLinkMail(null)} style={{ background: 'none', border: 'none', color: C.muted, fontSize: '12px', fontFamily: 'inherit', cursor: 'pointer' }}>Annuler</button>
+                    </div>
+                  )}
                 </div>
               )}
 

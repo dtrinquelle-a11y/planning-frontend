@@ -4,6 +4,8 @@ import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 import { API } from '../config';
 import ContratModal from './ContratModal';
+import ClassificationBlock from './ClassificationBlock';
+import { SALARY_DEFAULTS } from '../ccHpa';
 
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
@@ -20,6 +22,9 @@ function contractFormFrom(emp) {
     contract_hours: emp.contract_hours ?? 35,
     hire_date: emp.hire_date ? String(emp.hire_date).slice(0, 10) : '',
     contract_end_date: emp.contract_end_date ? String(emp.contract_end_date).slice(0, 10) : '',
+    emploi_repere: emp.emploi_repere || '', categorie: emp.categorie || '', coefficient: emp.coefficient ?? '',
+    salaire_horaire: emp.salaire_horaire != null ? String(emp.salaire_horaire).replace('.', ',') : '',
+    periode_essai: emp.periode_essai || '', taches: emp.taches || '', logement: !!emp.logement, logement_details: emp.logement_details || '',
   };
 }
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
@@ -42,6 +47,11 @@ export default function DossiersRH() {
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
   const [contratOpen, setContratOpen] = useState(false); // fenetre "Editer un contrat"
+  const [ccCfg, setCcCfg] = useState(SALARY_DEFAULTS);   // valeurs de salaire de la CC HPA (Parametrage)
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'cc_hpa').maybeSingle()
+      .then(({ data }) => setCcCfg({ ...SALARY_DEFAULTS, ...Object.fromEntries(Object.entries(data?.value || {}).filter(([k, v]) => k in SALARY_DEFAULTS && v !== '' && v != null)) }));
+  }, []);
   const [linkMail, setLinkMail] = useState(null);     // email saisi pour envoyer le lien (null = champ ferme)
   const [sendingMail, setSendingMail] = useState(false);
   const [creatingLink, setCreatingLink] = useState(false);
@@ -98,6 +108,14 @@ export default function DossiersRH() {
         contract_hours: parseFloat(contractForm.contract_hours) || 35,
         hire_date: contractForm.hire_date || null,
         contract_end_date: contractForm.contract_end_date || null,
+        emploi_repere: contractForm.emploi_repere || null,
+        categorie: contractForm.categorie.trim() || null,
+        coefficient: parseInt(contractForm.coefficient, 10) || null,
+        salaire_horaire: parseFloat(String(contractForm.salaire_horaire).replace(',', '.')) || null,
+        periode_essai: contractForm.periode_essai.trim() || null,
+        taches: contractForm.taches.trim() || null,
+        logement: !!contractForm.logement,
+        logement_details: contractForm.logement ? (contractForm.logement_details.trim() || null) : null,
       };
       const { data, error } = await supabase.from('employees').update(patch).eq('id', selectedEmp.id).select().single();
       if (error) throw error;
@@ -530,6 +548,7 @@ export default function DossiersRH() {
                       );
                     })}
                   </div>
+                  <ClassificationBlock form={contractForm} setForm={setContractForm} cfg={ccCfg} />
                   <div style={{ marginTop: '14px', textAlign: 'right' }}>
                     <button onClick={saveContract} disabled={savingContract}
                       style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '8px 18px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: savingContract ? 'not-allowed' : 'pointer', opacity: savingContract ? 0.7 : 1 }}>

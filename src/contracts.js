@@ -1,10 +1,11 @@
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 
-// Edition de contrats : modele Word (.docx) contenant des champs {prenom}, {date_debut}...
+// Edition de contrats : modele Word (.docx) contenant des champs de publipostage «NOM», «PRENOM»... (ou {nom})
 // Les champs connus sont remplis avec la fiche du salarie ; les autres sont demandes a l'edition.
 
 export const FIELDS = [
+  { group: 'Salarié', key: 'civilite', label: 'Civilité (Madame / Monsieur)' },
   { group: 'Salarié', key: 'prenom', label: 'Prénom' },
   { group: 'Salarié', key: 'nom', label: 'Nom' },
   { group: 'Salarié', key: 'nom_complet', label: 'Prénom et nom' },
@@ -25,6 +26,15 @@ export const FIELDS = [
   { group: 'Contrat', key: 'date_fin', label: 'Date de fin' },
   { group: 'Contrat', key: 'heures_hebdo', label: 'Heures par semaine' },
   { group: 'Contrat', key: 'heures_mensuelles', label: 'Heures par mois (×52/12)' },
+  { group: 'Contrat', key: 'periode_essai', label: "Période d'essai" },
+  { group: 'Contrat', key: 'taches', label: 'Tâches confiées (une par ligne)' },
+  { group: 'Contrat', key: 'logement', label: 'Paragraphe logement (vide si pas de logement)' },
+  { group: 'Contrat', key: 'logement_details', label: 'Conditions du logement (texte de la fiche)' },
+  { group: 'Classification', key: 'emploi_repere', label: 'Emploi de la grille CC HPA' },
+  { group: 'Classification', key: 'categorie', label: 'Catégorie' },
+  { group: 'Classification', key: 'coefficient', label: 'Coefficient' },
+  { group: 'Classification', key: 'salaire_horaire', label: 'Salaire horaire brut (€)' },
+  { group: 'Classification', key: 'salaire_mensuel', label: 'Salaire mensuel brut (€)' },
   { group: 'Employeur', key: 'employeur_nom', label: "Nom de l'entreprise" },
   { group: 'Employeur', key: 'employeur_adresse', label: "Adresse de l'entreprise" },
   { group: 'Employeur', key: 'employeur_code_postal', label: 'Code postal' },
@@ -36,12 +46,14 @@ export const CONDITIONS = [
   { key: 'cdd', label: 'Contrat à durée déterminée (CDD, saisonnier…)' },
   { key: 'cdi', label: 'CDI' },
   { key: 'temps_partiel', label: 'Moins de 35 h par semaine' },
+  { key: 'logement', label: "Logement fourni par l'employeur" },
 ];
 // Exemples de champs a completer a l'edition (tout autre nom entre accolades fonctionne)
-export const FREE_EXAMPLES = ['salaire_horaire', 'salaire_mensuel', 'coefficient', 'niveau', 'periode_essai', 'motif_cdd', 'lieu_travail'];
+export const FREE_EXAMPLES = ['motif_cdd', 'lieu_travail', 'prime', 'horaires_type'];
 
 const fr = d => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '');
 const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
+const money = n => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Valeurs des champs connus, depuis la fiche, les reponses d'onboarding et les infos du camping
 export function buildValues(emp, responses, camping) {
@@ -51,7 +63,10 @@ export function buildValues(emp, responses, camping) {
   const type = (emp.contract_type || '').toLowerCase();
   const adresse = emp.address || r['Adresse'] || '';
   const cp = r['Code postal'] || '', ville = r['Ville'] || '';
+  const hourly = parseFloat(emp.salaire_horaire) || 0;
+  const civilite = r['Civilite'] || '';
   const v = {
+    civilite,
     prenom: emp.first_name || '', nom: (emp.last_name || '').toUpperCase(), nom_complet: (emp.first_name || '') + ' ' + (emp.last_name || '').toUpperCase(),
     date_naissance: fr(emp.birth_date || r['Date de naissance']), lieu_naissance: r['Lieu de naissance'] || '', nationalite: r['Nationalite'] || '',
     numero_secu: emp.nss || r['Numero de securite sociale'] || '',
@@ -60,30 +75,148 @@ export function buildValues(emp, responses, camping) {
     poste: emp.role || '', service: emp.service || '', type_contrat: emp.contract_type || '',
     date_debut: fr(emp.hire_date), date_fin: fr(emp.contract_end_date),
     heures_hebdo: hours ? num(hours) : '', heures_mensuelles: hours ? num(hours * 52 / 12) : '',
+    periode_essai: emp.periode_essai || '', taches: emp.taches || '', logement_details: emp.logement_details || '',
+    emploi_repere: emp.emploi_repere || '', categorie: emp.categorie || '', coefficient: emp.coefficient != null ? String(emp.coefficient) : '',
+    salaire_horaire: hourly ? money(hourly) : '', salaire_mensuel: hourly && hours ? money(Math.round(hourly * hours * 52 / 12 * 100) / 100) : '',
     employeur_nom: camping?.name || '', employeur_adresse: camping?.address || '', employeur_code_postal: camping?.postal_code || '', employeur_ville: camping?.city || '',
     date_du_jour: new Date().toLocaleDateString('fr-FR'),
     cdd: type.includes('cdd') || type.includes('saison') || type.includes('extra') || !!emp.contract_end_date,
     cdi: type.includes('cdi'),
     temps_partiel: hours > 0 && hours < 35,
+    logement: !!emp.logement,
   };
+  // Phrase du logement, utilisee quand le modele contient le champ «LOGEMENT»
+  v.logement_texte = emp.logement
+    ? [LOGEMENT_PHRASE.replace('{civilite}', civilite).replace('{nom}', v.nom).replace('{prenom}', v.prenom).replace(/^\s+/, ''), emp.logement_details || ''].filter(Boolean).join(' ')
+    : '';
   return v;
 }
 
-const options = { paragraphLoop: true, linebreaks: true, nullGetter: () => '' };
+// Phrase du logement (champ «LOGEMENT»), reprise telle quelle si le logement est coche dans la fiche
+export const LOGEMENT_PHRASE = "{civilite} {nom} {prenom}, dispose pendant la durée de son contrat d'une chambre individuelle. Une caution sera demandée.";
 
-// Champs presents dans le modele : simples ({nom}) et conditions ({#cdd}...{/cdd})
-export function inspectTemplate(arrayBuffer) {
-  const doc = new Docxtemplater(new PizZip(arrayBuffer), options); // leve une erreur si le modele est mal forme
-  const text = doc.getFullText();
-  const simple = new Set(), blocks = new Set();
-  for (const m of text.matchAll(/\{\s*([#^/]?)\s*([A-Za-z0-9_]+)\s*\}/g)) {
-    if (m[1] === '#' || m[1] === '^') blocks.add(m[2]); else if (!m[1]) simple.add(m[2]);
+// Nom de champ -> forme simple : "Date de naissance", «DATE_NAISSANCE», {date_naissance} -> "date_naissance"
+export const normalize = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+// Autres noms acceptes pour les champs connus (modeles de publipostage existants)
+const ALIASES = {
+  civilite: ['civ', 'titre', 'madame_monsieur'],
+  nom: ['nom_de_famille', 'nom_salarie'],
+  prenom: ['prenom_salarie'],
+  nom_complet: ['nom_prenom', 'prenom_nom', 'salarie', 'identite'],
+  date_naissance: ['date_de_naissance', 'ne_le', 'naissance', 'nele'],
+  lieu_naissance: ['lieu_de_naissance', 'ne_a', 'ville_naissance', 'ville_de_naissance'],
+  nationalite: ['nationalite_salarie'],
+  numero_secu: ['n_secu', 'num_secu', 'no_secu', 'secu', 'securite_sociale', 'numero_securite_sociale', 'n_securite_sociale', 'nss', 'numero_de_securite_sociale'],
+  adresse: ['rue', 'adresse_salarie', 'adresse1'],
+  code_postal: ['cp', 'codepostal'],
+  ville: ['commune', 'localite'],
+  adresse_complete: ['adresse_postale'],
+  email: ['mail', 'e_mail', 'courriel'],
+  telephone: ['tel', 'portable', 'telephone_portable', 'mobile'],
+  poste: ['emploi', 'fonction', 'intitule_poste', 'poste_occupe'],
+  type_contrat: ['contrat', 'nature_contrat'],
+  date_debut: ['date_d_embauche', 'date_embauche', 'date_entree', 'date_d_entree', 'debut_contrat', 'date_debut_contrat'],
+  date_fin: ['date_de_fin', 'fin_contrat', 'date_fin_contrat', 'date_sortie', 'date_de_sortie'],
+  heures_hebdo: ['heures', 'duree_hebdo', 'duree_hebdomadaire', 'horaire_hebdo', 'nb_heures', 'heures_semaine'],
+  heures_mensuelles: ['heures_mois', 'duree_mensuelle', 'horaire_mensuel'],
+  periode_essai: ['essai', 'periode_d_essai', 'duree_essai', 'duree_periode_essai'],
+  taches: ['missions', 'fonctions', 'attributions', 'taches_confiees'],
+  logement_details: ['conditions_logement'],
+  emploi_repere: ['emploi_grille', 'emploi_conventionnel'],
+  categorie: ['cat'],
+  coefficient: ['coef', 'coeff'],
+  salaire_horaire: ['taux_horaire', 'taux_horaire_brut', 'salaire_horaire_brut'],
+  salaire_mensuel: ['salaire', 'salaire_brut', 'salaire_mensuel_brut', 'remuneration', 'remuneration_mensuelle'],
+  employeur_nom: ['employeur', 'societe', 'raison_sociale', 'entreprise', 'nom_entreprise'],
+  employeur_adresse: ['adresse_employeur', 'adresse_entreprise'],
+  employeur_code_postal: ['cp_employeur'],
+  employeur_ville: ['ville_employeur'],
+  date_du_jour: ['date', 'date_edition', 'aujourd_hui', 'fait_le'],
+  logement: ['hebergement'],
+  cdd: ['contrat_cdd', 'saisonnier'],
+  cdi: ['contrat_cdi'],
+  temps_partiel: ['partiel'],
+};
+const ALIAS_INDEX = {};
+Object.entries(ALIASES).forEach(([key, list]) => { ALIAS_INDEX[key] = key; list.forEach(a => { ALIAS_INDEX[a] = key; }); });
+
+// Champ connu correspondant a un nom du modele (sinon null : champ a completer)
+export const resolveKey = raw => ALIAS_INDEX[normalize(raw)] || null;
+
+// Champs de publipostage Word (MERGEFIELD) -> texte «NOM», que le moteur sait ensuite remplir
+function mergeFieldName(instr) {
+  const m = /MERGEFIELD\s+(?:"([^"]+)"|&quot;(.+?)&quot;|([^\s\\]+))/i.exec(instr);
+  return m ? (m[1] || m[2] || m[3]) : null;
+}
+const runText = (rPr, text) => '<w:r>' + rPr + '<w:t xml:space="preserve">' + text + '</w:t></w:r>';
+function convertMergeFields(xml) {
+  // 1. Champs simples
+  xml = xml.replace(/<w:fldSimple\b([^>]*?)(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g, (all, attrs, inner) => {
+    const instr = (/w:instr="([^"]*)"/.exec(attrs) || [])[1] || '';
+    const name = mergeFieldName(instr);
+    if (!name) return all;
+    const rPr = ((inner || '').match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+    return runText(rPr, '«' + name + '»');
+  });
+  // 2. Champs complexes : debut / instruction / separation / resultat / fin repartis sur plusieurs "runs"
+  const runRe = /<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g;
+  const runs = [];
+  let m;
+  while ((m = runRe.exec(xml))) runs.push({ start: m.index, end: m.index + m[0].length, xml: m[0] });
+  const edits = [];
+  for (let i = 0; i < runs.length; i++) {
+    if (!/w:fldCharType="begin"/.test(runs[i].xml)) continue;
+    let depth = 0, instr = '', rPr = '', sep = false, j = i;
+    for (; j < runs.length; j++) {
+      const r = runs[j].xml;
+      if (/w:fldCharType="begin"/.test(r)) depth++;
+      if (depth === 1 && !sep) { const t = r.match(/<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/); if (t) instr += t[1]; }
+      if (/w:fldCharType="separate"/.test(r) && depth === 1) sep = true;
+      else if (sep && depth === 1 && !rPr && /<w:t[ >]/.test(r)) rPr = (r.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+      if (/w:fldCharType="end"/.test(r)) { depth--; if (depth === 0) break; }
+    }
+    if (j >= runs.length) break;
+    const name = mergeFieldName(instr);
+    if (name) {
+      if (!rPr) rPr = (runs[i].xml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+      edits.push({ start: runs[i].start, end: runs[j].end, text: runText(rPr, '«' + name + '»') });
+    }
+    i = j;
   }
-  return { fields: [...simple], blocks: [...blocks] };
+  for (let k = edits.length - 1; k >= 0; k--) xml = xml.slice(0, edits[k].start) + edits[k].text + xml.slice(edits[k].end);
+  return xml;
+}
+
+// Ouvre le modele : conversion des champs Word, choix de l'ecriture (« » ou { })
+function openTemplate(arrayBuffer) {
+  const zip = new PizZip(arrayBuffer);
+  let guillemets = false;
+  Object.keys(zip.files).filter(n => /^word\/(document|header\d*|footer\d*)\.xml$/.test(n)).forEach(n => {
+    const xml = convertMergeFields(zip.file(n).asText());
+    if (xml.includes('«')) guillemets = true;
+    zip.file(n, xml);
+  });
+  const opts = { paragraphLoop: true, linebreaks: true, nullGetter: () => '' };
+  if (guillemets) opts.delimiters = { start: '«', end: '»' };
+  return { doc: new Docxtemplater(zip, opts), guillemets };
+}
+
+// Champs presents dans le modele (noms tels qu'ecrits) : simples et conditions (#nom ... /nom)
+export function inspectTemplate(arrayBuffer) {
+  const { doc, guillemets } = openTemplate(arrayBuffer); // leve une erreur si le modele est mal forme
+  const text = doc.getFullText();
+  const re = guillemets ? /«\s*([#^/]?)\s*([^«»#^/][^«»]*?)\s*»/gu : /\{\s*([#^/]?)\s*([^{}#^/][^{}]*?)\s*\}/gu;
+  const simple = new Set(), blocks = new Set();
+  for (const mm of text.matchAll(re)) {
+    if (mm[1] === '#' || mm[1] === '^') blocks.add(mm[2]); else if (!mm[1]) simple.add(mm[2]);
+  }
+  // Un nom utilise a la fois comme texte et comme condition reste un texte (la condition suit : texte vide = masque)
+  return { fields: [...simple], blocks: [...blocks].filter(b => !simple.has(b)), guillemets };
 }
 
 export function renderContract(arrayBuffer, values) {
-  const doc = new Docxtemplater(new PizZip(arrayBuffer), options);
+  const { doc } = openTemplate(arrayBuffer);
   doc.render(values);
   return doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE' });
 }

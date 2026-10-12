@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
-import { FIELDS, CONDITIONS, buildValues, inspectTemplate, renderContract, templateError, downloadBlob } from '../contracts';
+import { FIELDS, CONDITIONS, buildValues, inspectTemplate, renderContract, templateError, downloadBlob, resolveKey } from '../contracts';
 
 const LABELS = Object.fromEntries([...FIELDS, ...CONDITIONS].map(f => [f.key, f.label]));
 // "salaire_horaire" -> "Salaire horaire"
-const pretty = k => (k.charAt(0).toUpperCase() + k.slice(1)).replace(/_/g, ' ');
+const pretty = k => (k.charAt(0).toUpperCase() + k.slice(1).toLowerCase()).replace(/_/g, ' ');
+const labelOf = k => LABELS[resolveKey(k)] || pretty(k);
 
 // Dossiers RH > Editer un contrat : modele + fiche du salarie -> contrat Word complete
 export default function ContratModal({ emp, responses, onClose, onSaved }) {
@@ -38,14 +39,18 @@ export default function ContratModal({ emp, responses, onClose, onSaved }) {
       const buf = await file.arrayBuffer();
       const found = inspectTemplate(buf);
       const known = buildValues(emp, responses, camp?.value);
+      // Noms du modele (ex. «DATE_DE_NAISSANCE») rapproches des champs connus de la fiche
       const v = {};
-      found.fields.forEach(k => { v[k] = k in known ? known[k] : (t.last_values?.[k] ?? ''); });
-      found.blocks.forEach(k => { v[k] = k in known ? !!known[k] : !!t.last_values?.[k]; });
+      found.fields.forEach(k => {
+        const key = resolveKey(k);
+        v[k] = key === 'logement' ? known.logement_texte : key && key in known ? known[key] : (t.last_values?.[k] ?? '');
+      });
+      found.blocks.forEach(k => { const key = resolveKey(k); v[k] = key && key in known ? !!known[key] : !!t.last_values?.[k]; });
       setBuffer(buf); setInfo(found); setValues(v);
     } catch (err) { setMsg({ err: true, text: 'Modèle illisible : ' + templateError(err) }); }
   }
 
-  const knownKeys = new Set([...FIELDS.map(f => f.key), ...CONDITIONS.map(c => c.key)]);
+  const knownKeys = { has: k => !!resolveKey(k) }; // champ rempli depuis la fiche (sinon : a completer)
 
   async function generate() {
     setBusy(true); setMsg(null);
@@ -108,7 +113,7 @@ export default function ContratModal({ emp, responses, onClose, onSaved }) {
                 const empty = !String(values[k] ?? '').trim();
                 return (
                   <label key={k} style={{ fontSize: '11px', color: knownKeys.has(k) ? C.muted : C.purple, fontWeight: 500 }}>
-                    {LABELS[k] || pretty(k)}{!knownKeys.has(k) && ' · à compléter'}
+                    {labelOf(k)}{!knownKeys.has(k) && ' · à compléter'} <span style={{ color: C.border, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '10px' }}>{info.guillemets ? '«' + k + '»' : '{' + k + '}'}</span>
                     <input value={values[k] ?? ''} onChange={e => setValues(v => ({ ...v, [k]: e.target.value }))}
                       style={{ ...inp, marginTop: '3px', borderColor: empty ? C.amber : C.border }} />
                   </label>
@@ -121,7 +126,7 @@ export default function ContratModal({ emp, responses, onClose, onSaved }) {
                 {info.blocks.map(k => (
                   <label key={k} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: C.text, marginBottom: '4px', cursor: 'pointer' }}>
                     <input type="checkbox" checked={!!values[k]} onChange={e => setValues(v => ({ ...v, [k]: e.target.checked }))} style={{ accentColor: C.purple }} />
-                    {LABELS[k] || pretty(k)}
+                    {labelOf(k)}
                   </label>
                 ))}
               </div>

@@ -4,6 +4,7 @@ import axios from 'axios';
 import Sauvegardes from './Sauvegardes';
 import FermeturesEntreprise from './FermeturesEntreprise';
 import ModelesContrats from './ModelesContrats';
+import GrilleCcHpa from './GrilleCcHpa';
 import { API } from '../config';
 
 
@@ -269,6 +270,7 @@ export default function Parametrage() {
                       ✓ Période : {settings.cc_hpa?.period_start} → {settings.cc_hpa?.period_end}
                     </div>
                   </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}><GrilleCcHpa settings={settings} setSettings={setSettings} /></div>
                   <button onClick={() => saveSetting('cc_hpa', settings.cc_hpa)} disabled={saving}
                     style={{ marginTop: '20px', background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 24px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
                     {saving ? 'Sauvegarde...' : '💾 Sauvegarder'}

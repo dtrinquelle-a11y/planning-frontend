@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
-import { FIELDS, CONDITIONS, FREE_EXAMPLES, inspectTemplate, templateError, downloadBlob } from '../contracts';
+import { FIELDS, CONDITIONS, FREE_EXAMPLES, inspectTemplate, templateError, downloadBlob, resolveKey } from '../contracts';
 
 // Parametrage > Contrats : modeles Word avec champs de fusion
 export default function ModelesContrats() {
@@ -27,8 +27,7 @@ export default function ModelesContrats() {
     try {
       // Verification du modele avant depot : champs detectes, accolades correctes
       const info = inspectTemplate(await file.arrayBuffer());
-      const known = new Set([...FIELDS.map(f => f.key), ...CONDITIONS.map(c => c.key)]);
-      const free = info.fields.filter(f => !known.has(f));
+      const free = info.fields.filter(f => !resolveKey(f));
       const id = crypto.randomUUID();
       const path = id + '.docx';
       const { error: ue } = await supabase.storage.from('modeles-contrats').upload(path, file, { contentType: file.type || undefined });
@@ -68,19 +67,22 @@ export default function ModelesContrats() {
   }
 
   const btn = { background: C.card, border: '1px solid ' + C.border, borderRadius: '6px', padding: '5px 10px', color: C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' };
-  const chip = k => (
-    <button key={k} onClick={() => copy('{' + k + '}')} title="Copier"
-      style={{ background: copied === '{' + k + '}' ? C.greenLight : C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '3px 8px', fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '12px', color: copied === '{' + k + '}' ? C.green : C.purple, cursor: 'pointer' }}>
-      {copied === '{' + k + '}' ? '✓ copié' : '{' + k + '}'}
-    </button>
-  );
+  const chip = k => {
+    const tag = '«' + k.toUpperCase() + '»';
+    return (
+      <button key={k} onClick={() => copy(tag)} title="Copier"
+        style={{ background: copied === tag ? C.greenLight : C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '3px 8px', fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '12px', color: copied === tag ? C.green : C.purple, cursor: 'pointer' }}>
+        {copied === tag ? '✓ copié' : tag}
+      </button>
+    );
+  };
   const groups = [...new Set(FIELDS.map(f => f.group))];
 
   return (
     <div>
       <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Modèles de contrat</div>
       <div style={{ fontSize: '12px', color: C.muted, marginBottom: '20px', lineHeight: 1.6 }}>
-        Déposez vos modèles Word (.docx) en y plaçant des champs entre accolades, par exemple <code>{'{prenom}'}</code>. Depuis la fiche d'un salarié
+        Déposez vos modèles Word (.docx) avec des champs de publipostage, par exemple <code>«NOM»</code> <code>«PRENOM»</code> (champs Word ou texte tapé entre « »). Depuis la fiche d'un salarié
         (Dossiers RH › « Éditer un contrat »), l'application remplit automatiquement les champs connus et vous demande les autres.
       </div>
 
@@ -118,7 +120,10 @@ export default function ModelesContrats() {
 
       {/* Aide-memoire des champs */}
       <div style={{ fontSize: '14px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>Champs disponibles</div>
-      <div style={{ fontSize: '12px', color: C.muted, marginBottom: '12px' }}>Cliquez sur un champ pour le copier, puis collez-le dans votre document Word.</div>
+      <div style={{ fontSize: '12px', color: C.muted, marginBottom: '12px', lineHeight: 1.6 }}>
+        Cliquez sur un champ pour le copier, puis collez-le dans votre document Word. Les noms sont reconnus sans tenir compte des majuscules, des accents ni des variantes courantes
+        (ex. «DATE_DE_NAISSANCE», «NE_LE», «N_SECU», «TAUX_HORAIRE», «COEF»…). Les champs de publipostage Word existants (Insertion › Champ de fusion) sont repris tels quels.
+      </div>
       <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {groups.map(g => (
           <div key={g}>
@@ -133,15 +138,17 @@ export default function ModelesContrats() {
         <div>
           <div style={{ fontSize: '11px', fontWeight: 600, color: C.muted, letterSpacing: '0.06em', marginBottom: '6px' }}>À COMPLÉTER À CHAQUE ÉDITION</div>
           <div style={{ fontSize: '12px', color: C.text, lineHeight: 1.7 }}>
-            Tout autre nom entre accolades devient un champ que l'application vous demandera (la dernière valeur saisie est reprise), par exemple :{' '}
+            Tout autre nom de champ devient une case que l'application vous demandera (la dernière valeur saisie est reprise), par exemple :{' '}
             <span style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap' }}>{FREE_EXAMPLES.map(chip)}</span>
           </div>
         </div>
         <div>
           <div style={{ fontSize: '11px', fontWeight: 600, color: C.muted, letterSpacing: '0.06em', marginBottom: '6px' }}>PARAGRAPHES CONDITIONNELS</div>
           <div style={{ fontSize: '12px', color: C.text, lineHeight: 1.7 }}>
-            Un texte entre <code>{'{#cdd}'}</code> et <code>{'{/cdd}'}</code> n'apparaît que pour un CDD ; entre <code>{'{^cdd}'}</code> et <code>{'{/cdd}'}</code>, seulement si ce n'est pas un CDD.
-            {CONDITIONS.map(c => <div key={c.key}><code style={{ color: C.purple }}>{'#' + c.key}</code> : {c.label}</div>)}
+            Un texte entre <code>«#CDD»</code> et <code>«/CDD»</code> n'apparaît que pour un CDD ; entre <code>«^CDD»</code> et <code>«/CDD»</code>, seulement si ce n'est pas un CDD.
+            {CONDITIONS.map(c => <div key={c.key}><code style={{ color: C.purple }}>{'«#' + c.key.toUpperCase() + '»'}</code> : {c.label}</div>)}
+            <div style={{ marginTop: '6px' }}>Logement : placez simplement <code>«LOGEMENT»</code> à l'endroit du paragraphe. Si le logement est coché dans la fiche, il devient :
+              <em> « Madame DUPONT Chloé, dispose pendant la durée de son contrat d'une chambre individuelle. Une caution sera demandée. »</em> (suivi des conditions saisies dans la fiche) ; sinon il reste vide.</div>
           </div>
         </div>
         <div style={{ fontSize: '11px', color: C.muted, lineHeight: 1.6 }}>

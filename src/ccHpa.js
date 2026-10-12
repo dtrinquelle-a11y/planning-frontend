@@ -74,3 +74,44 @@ export function suggestTrial({ contractType, start, end, cat }) {
   const months = cat >= 5 ? 4 : cat === 4 ? 3 : 2;
   return { text: months + ' mois', rule: 'CDI, ' + (cat >= 5 ? 'cadre' : cat === 4 ? 'agent de maîtrise / technicien' : 'ouvrier / employé') + ' : durée maximale légale (art. L. 1221-19), renouvellement seulement si un accord de branche étendu le prévoit' };
 }
+
+// Montant en toutes lettres : 1971.52 -> "mille neuf cent soixante et onze euros et cinquante-deux centimes"
+const UNITS = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize'];
+const TENS = { 2: 'vingt', 3: 'trente', 4: 'quarante', 5: 'cinquante', 6: 'soixante' };
+function below100(n) {
+  if (n <= 16) return UNITS[n];
+  if (n < 20) return 'dix-' + UNITS[n - 10];
+  const t = Math.floor(n / 10), u = n % 10;
+  if (t <= 6) return TENS[t] + (u === 0 ? '' : u === 1 ? ' et un' : '-' + UNITS[u]);
+  if (t === 7) return 'soixante' + (u === 1 ? ' et onze' : '-' + below100(10 + u));
+  if (t === 8) return u === 0 ? 'quatre-vingts' : 'quatre-vingt-' + UNITS[u];
+  return 'quatre-vingt-' + below100(10 + u); // 90 a 99
+}
+// final : le nombre termine le montant (sinon "vingts" et "cents" perdent leur s, ex. "quatre-vingt mille")
+function below1000(n, final) {
+  const h = Math.floor(n / 100), r = n % 100;
+  let s = '';
+  if (h) s = (h === 1 ? 'cent' : UNITS[h] + ' cent' + (r === 0 && final ? 's' : ''));
+  if (r) s += (s ? ' ' : '') + below100(r);
+  if (!final) s = s.replace(/quatre-vingts$/, 'quatre-vingt');
+  return s;
+}
+export function nombreEnLettres(n) {
+  n = Math.floor(n);
+  if (n === 0) return 'zéro';
+  const millions = Math.floor(n / 1e6), thousands = Math.floor((n % 1e6) / 1000), rest = n % 1000;
+  const parts = [];
+  if (millions) parts.push(below1000(millions, true) + ' million' + (millions > 1 ? 's' : ''));
+  if (thousands) parts.push(thousands === 1 ? 'mille' : below1000(thousands, false) + ' mille');
+  if (rest) parts.push(below1000(rest, true));
+  return parts.join(' ');
+}
+export function montantEnLettres(amount) {
+  if (amount == null || isNaN(amount)) return '';
+  const cents = Math.round(amount * 100);
+  const e = Math.floor(cents / 100), c = cents % 100;
+  let s = nombreEnLettres(e) + (e > 1 ? ' euros' : ' euro');
+  if (/million(s)?$/.test(nombreEnLettres(e))) s = s.replace(/ euros$/, " d'euros");
+  if (c) s += ' et ' + nombreEnLettres(c) + (c > 1 ? ' centimes' : ' centime');
+  return s;
+}

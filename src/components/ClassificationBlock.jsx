@@ -18,7 +18,7 @@ export default function ClassificationBlock({ form, setForm, cfg }) {
     setForm(f => {
       const c = parseInt(f.coefficient, 10);
       const nextCoef = g && (!c || c < g.min || c > g.max) ? g.min : c || '';
-      return { ...f, emploi_repere: name, categorie: g ? CATEGORIES[g.cat] : f.categorie, coefficient: nextCoef };
+      return { ...f, emploi_repere: name, categorie: g ? String(g.cat) : f.categorie, coefficient: nextCoef };
     });
   }
 

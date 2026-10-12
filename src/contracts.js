@@ -1,5 +1,6 @@
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
+import { minimumFor, montantEnLettres, SALARY_DEFAULTS } from './ccHpa';
 
 // Edition de contrats : modele Word (.docx) contenant des champs de publipostage «NOM», «PRENOM»... (ou {nom})
 // Les champs connus sont remplis avec la fiche du salarie ; les autres sont demandes a l'edition.
@@ -24,9 +25,11 @@ export const FIELDS = [
   { group: 'Contrat', key: 'type_contrat', label: 'Type de contrat' },
   { group: 'Contrat', key: 'date_debut', label: 'Date de début' },
   { group: 'Contrat', key: 'date_fin', label: 'Date de fin' },
+  { group: 'Contrat', key: 'heure_arrivee', label: "Heure d'arrivée (9h00 par défaut)" },
+  { group: 'Contrat', key: 'heure_depart', label: 'Heure de départ (17h00 par défaut)' },
   { group: 'Contrat', key: 'heures_hebdo', label: 'Heures par semaine' },
   { group: 'Contrat', key: 'heures_mensuelles', label: 'Heures par mois (×52/12)' },
-  { group: 'Contrat', key: 'periode_essai', label: "Période d'essai" },
+  { group: 'Contrat', key: 'periode_essai', label: "Période d'essai (15 jours par défaut)" },
   { group: 'Contrat', key: 'taches', label: 'Tâches confiées (une par ligne)' },
   { group: 'Contrat', key: 'logement', label: 'Paragraphe logement (vide si pas de logement)' },
   { group: 'Contrat', key: 'logement_details', label: 'Conditions du logement (texte de la fiche)' },
@@ -34,7 +37,8 @@ export const FIELDS = [
   { group: 'Classification', key: 'categorie', label: 'Catégorie' },
   { group: 'Classification', key: 'coefficient', label: 'Coefficient' },
   { group: 'Classification', key: 'salaire_horaire', label: 'Salaire horaire brut (€)' },
-  { group: 'Classification', key: 'salaire_mensuel', label: 'Salaire mensuel brut (€)' },
+  { group: 'Classification', key: 'salaire_mensuel', label: 'Salaire mensuel brut (€), calculé' },
+  { group: 'Classification', key: 'salaire_lettres', label: 'Salaire mensuel brut en toutes lettres' },
   { group: 'Employeur', key: 'employeur_nom', label: "Nom de l'entreprise" },
   { group: 'Employeur', key: 'employeur_adresse', label: "Adresse de l'entreprise" },
   { group: 'Employeur', key: 'employeur_code_postal', label: 'Code postal' },
@@ -56,7 +60,7 @@ const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
 const money = n => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Valeurs des champs connus, depuis la fiche, les reponses d'onboarding et les infos du camping
-export function buildValues(emp, responses, camping) {
+export function buildValues(emp, responses, camping, cfg = SALARY_DEFAULTS) {
   const r = {};
   (responses || []).forEach(x => { if (x.onboarding_fields?.label) r[x.onboarding_fields.label] = x.value; });
   const hours = parseFloat(emp.contract_hours) || 0;
@@ -64,6 +68,10 @@ export function buildValues(emp, responses, camping) {
   const adresse = emp.address || r['Adresse'] || '';
   const cp = r['Code postal'] || '', ville = r['Ville'] || '';
   const hourly = parseFloat(emp.salaire_horaire) || 0;
+  // Salaire mensuel brut lisse : salaire horaire de la fiche, sinon minimum conventionnel du coefficient (au prorata des heures)
+  const coef = parseInt(emp.coefficient, 10) || 0;
+  const monthly = hourly && hours ? Math.round(hourly * hours * 52 / 12 * 100) / 100
+    : coef >= 100 ? Math.round(minimumFor(coef, cfg).monthly * (hours || 35) / 35 * 100) / 100 : 0;
   const civilite = emp.civilite || r['Civilite'] || '';
   const v = {
     civilite,
@@ -75,9 +83,10 @@ export function buildValues(emp, responses, camping) {
     poste: emp.role || '', service: emp.service || '', type_contrat: emp.contract_type || '',
     date_debut: fr(emp.hire_date), date_fin: fr(emp.contract_end_date),
     heures_hebdo: hours ? num(hours) : '', heures_mensuelles: hours ? num(hours * 52 / 12) : '',
-    periode_essai: emp.periode_essai || '', taches: emp.taches || '', logement_details: emp.logement_details || '',
+    periode_essai: emp.periode_essai || '15 jours', heure_arrivee: '9h00', heure_depart: '17h00', taches: emp.taches || '', logement_details: emp.logement_details || '',
     emploi_repere: emp.emploi_repere || '', categorie: emp.categorie || '', coefficient: emp.coefficient != null ? String(emp.coefficient) : '',
-    salaire_horaire: hourly ? money(hourly) : '', salaire_mensuel: hourly && hours ? money(Math.round(hourly * hours * 52 / 12 * 100) / 100) : '',
+    salaire_horaire: hourly ? money(hourly) : coef >= 100 ? money(minimumFor(coef, cfg).hourly) : '',
+    salaire_mensuel: monthly ? money(monthly) : '', salaire_lettres: monthly ? montantEnLettres(monthly) : '',
     employeur_nom: camping?.name || '', employeur_adresse: camping?.address || '', employeur_code_postal: camping?.postal_code || '', employeur_ville: camping?.city || '',
     date_du_jour: new Date().toLocaleDateString('fr-FR'),
     cdd: type.includes('cdd') || type.includes('saison') || type.includes('extra') || !!emp.contract_end_date,
@@ -116,18 +125,21 @@ const ALIASES = {
   telephone: ['tel', 'portable', 'telephone_portable', 'mobile'],
   poste: ['emploi', 'fonction', 'intitule_poste', 'poste_occupe'],
   type_contrat: ['contrat', 'nature_contrat'],
-  date_debut: ['date_d_embauche', 'date_embauche', 'date_entree', 'date_d_entree', 'debut_contrat', 'date_debut_contrat'],
-  date_fin: ['date_de_fin', 'fin_contrat', 'date_fin_contrat', 'date_sortie', 'date_de_sortie'],
+  date_debut: ['arrivee', 'date_arrivee', 'date_d_embauche', 'date_embauche', 'date_entree', 'date_d_entree', 'debut_contrat', 'date_debut_contrat'],
+  date_fin: ['depart', 'date_depart', 'date_de_fin', 'fin_contrat', 'date_fin_contrat', 'date_sortie', 'date_de_sortie'],
   heures_hebdo: ['heures', 'duree_hebdo', 'duree_hebdomadaire', 'horaire_hebdo', 'nb_heures', 'heures_semaine'],
   heures_mensuelles: ['heures_mois', 'duree_mensuelle', 'horaire_mensuel'],
-  periode_essai: ['essai', 'periode_d_essai', 'duree_essai', 'duree_periode_essai'],
+  heure_arrivee: ['h_arrivee', 'heure_debut', 'h_debut'],
+  heure_depart: ['h_depart', 'heure_fin', 'h_fin'],
+  salaire_lettres: ['salaire_brut_2', 'salaire_en_lettres', 'montant_en_lettres', 'salaire_lettre'],
+  periode_essai: ['periode_essais', 'essais', 'essai', 'periode_d_essai', 'duree_essai', 'duree_periode_essai'],
   taches: ['missions', 'fonctions', 'attributions', 'taches_confiees'],
   logement_details: ['conditions_logement'],
   emploi_repere: ['emploi_grille', 'emploi_conventionnel'],
   categorie: ['cat'],
   coefficient: ['coef', 'coeff'],
   salaire_horaire: ['taux_horaire', 'taux_horaire_brut', 'salaire_horaire_brut'],
-  salaire_mensuel: ['salaire', 'salaire_brut', 'salaire_mensuel_brut', 'remuneration', 'remuneration_mensuelle'],
+  salaire_mensuel: ['salaire_brut_1', 'salaire', 'salaire_brut', 'salaire_mensuel_brut', 'remuneration', 'remuneration_mensuelle'],
   employeur_nom: ['employeur', 'societe', 'raison_sociale', 'entreprise', 'nom_entreprise'],
   employeur_adresse: ['adresse_employeur', 'adresse_entreprise'],
   employeur_code_postal: ['cp_employeur'],
@@ -149,6 +161,10 @@ function mergeFieldName(instr) {
   const m = /MERGEFIELD\s+(?:"([^"]+)"|&quot;(.+?)&quot;|([^\s\\]+))/i.exec(instr);
   return m ? (m[1] || m[2] || m[3]) : null;
 }
+// Reperes internes des champs (caracteres absents des contrats) : seuls les vrais champs y sont convertis
+const OPEN = '\u27E6', CLOSE = '\u27E7';
+// «NOM» tape a la main : un seul mot, sans espace (une citation « comme ceci » n'est pas un champ)
+const TYPED = /«([#^/]?[\p{L}\p{N}_]+)»/gu;
 const runText = (rPr, text) => '<w:r>' + rPr + '<w:t xml:space="preserve">' + text + '</w:t></w:r>';
 function convertMergeFields(xml) {
   // 1. Champs simples
@@ -157,7 +173,7 @@ function convertMergeFields(xml) {
     const name = mergeFieldName(instr);
     if (!name) return all;
     const rPr = ((inner || '').match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
-    return runText(rPr, '«' + name + '»');
+    return runText(rPr, OPEN + name + CLOSE);
   });
   // 2. Champs complexes : debut / instruction / separation / resultat / fin repartis sur plusieurs "runs"
   const runRe = /<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g;
@@ -180,7 +196,7 @@ function convertMergeFields(xml) {
     const name = mergeFieldName(instr);
     if (name) {
       if (!rPr) rPr = (runs[i].xml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
-      edits.push({ start: runs[i].start, end: runs[j].end, text: runText(rPr, '«' + name + '»') });
+      edits.push({ start: runs[i].start, end: runs[j].end, text: runText(rPr, OPEN + name + CLOSE) });
     }
     i = j;
   }
@@ -188,17 +204,18 @@ function convertMergeFields(xml) {
   return xml;
 }
 
-// Ouvre le modele : conversion des champs Word, choix de l'ecriture (« » ou { })
+// Ouvre le modele : champs Word et «NOM» tapes -> reperes internes ; sinon ecriture {nom}
 function openTemplate(arrayBuffer) {
   const zip = new PizZip(arrayBuffer);
   let guillemets = false;
   Object.keys(zip.files).filter(n => /^word\/(document|header\d*|footer\d*)\.xml$/.test(n)).forEach(n => {
-    const xml = convertMergeFields(zip.file(n).asText());
-    if (xml.includes('«')) guillemets = true;
+    let xml = convertMergeFields(zip.file(n).asText());
+    xml = xml.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g, (all, o, t, c) => o + t.replace(TYPED, OPEN + '$1' + CLOSE) + c);
+    if (xml.includes(OPEN)) guillemets = true;
     zip.file(n, xml);
   });
   const opts = { paragraphLoop: true, linebreaks: true, nullGetter: () => '' };
-  if (guillemets) opts.delimiters = { start: '«', end: '»' };
+  if (guillemets) opts.delimiters = { start: OPEN, end: CLOSE };
   return { doc: new Docxtemplater(zip, opts), guillemets };
 }
 
@@ -206,7 +223,7 @@ function openTemplate(arrayBuffer) {
 export function inspectTemplate(arrayBuffer) {
   const { doc, guillemets } = openTemplate(arrayBuffer); // leve une erreur si le modele est mal forme
   const text = doc.getFullText();
-  const re = guillemets ? /«\s*([#^/]?)\s*([^«»#^/][^«»]*?)\s*»/gu : /\{\s*([#^/]?)\s*([^{}#^/][^{}]*?)\s*\}/gu;
+  const re = guillemets ? /\u27E6\s*([#^/]?)\s*([^\u27E6\u27E7#^/][^\u27E6\u27E7]*?)\s*\u27E7/gu : /\{\s*([#^/]?)\s*([^{}#^/][^{}]*?)\s*\}/gu;
   const simple = new Set(), blocks = new Set();
   for (const mm of text.matchAll(re)) {
     if (mm[1] === '#' || mm[1] === '^') blocks.add(mm[2]); else if (!mm[1]) simple.add(mm[2]);

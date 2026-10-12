@@ -3,6 +3,7 @@ import { useTheme } from '../ThemeContext';
 import axios from 'axios';
 import Sauvegardes from './Sauvegardes';
 import FermeturesEntreprise from './FermeturesEntreprise';
+import ModelesContrats from './ModelesContrats';
 import { API } from '../config';
 
 
@@ -61,6 +62,7 @@ export default function Parametrage() {
     { id: 'cc_hpa', label: '⚖️ CC HPA', icon: '⚖️' },
     { id: 'pointeuse', label: '📷 Pointeuse', icon: '📷' },
     { id: 'conges', label: '🏖️ Congés payés', icon: '🏖️' },
+    { id: 'contrats', label: '📄 Contrats', icon: '📄' },
     { id: 'sauvegardes', label: '💾 Sauvegardes', icon: '💾' },
   ];
 
@@ -275,6 +277,7 @@ export default function Parametrage() {
               )}
 
               {section === 'sauvegardes' && <Sauvegardes />}
+              {section === 'contrats' && <ModelesContrats />}
 
               {/* CONGES PAYES : periodes ou les salaries ne peuvent pas poser de CP */}
               {section === 'conges' && (() => {

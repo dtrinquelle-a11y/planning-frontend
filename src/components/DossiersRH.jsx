@@ -3,6 +3,7 @@ import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 import { API } from '../config';
+import ContratModal from './ContratModal';
 
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
@@ -40,6 +41,7 @@ export default function DossiersRH() {
   const [toast, setToast] = useState('');
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
+  const [contratOpen, setContratOpen] = useState(false); // fenetre "Editer un contrat"
   const [linkMail, setLinkMail] = useState(null);     // email saisi pour envoyer le lien (null = champ ferme)
   const [sendingMail, setSendingMail] = useState(false);
   const [creatingLink, setCreatingLink] = useState(false);
@@ -396,6 +398,10 @@ export default function DossiersRH() {
                   {selectedEmp.is_active && (
                     <span style={{ background: '#DCFCE7', color: '#16A34A', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>✓ Compte actif</span>
                   )}
+                  <button onClick={() => setContratOpen(true)}
+                    style={{ background: C.card, border: '1px solid ' + C.purple + '66', borderRadius: '8px', padding: '10px 16px', color: C.purple, fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
+                    📄 Éditer un contrat
+                  </button>
                   {!accountIds.has(selectedEmp.id) && (
                     <button onClick={() => createAccessLink(selectedEmp)} disabled={creatingLink}
                       style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 16px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: creatingLink ? 'not-allowed' : 'pointer', opacity: creatingLink ? 0.7 : 1 }}>
@@ -417,6 +423,8 @@ export default function DossiersRH() {
                   )}
                 </div>
               </div>
+
+              {contratOpen && <ContratModal emp={selectedEmp} responses={responses} onClose={() => setContratOpen(false)} onSaved={() => loadEmpDetails(selectedEmp)} />}
 
               {/* Lien de premier acces genere */}
               {accessLink && accessLink.empId === selectedEmp.id && (

@@ -64,7 +64,7 @@ export function buildValues(emp, responses, camping) {
   const adresse = emp.address || r['Adresse'] || '';
   const cp = r['Code postal'] || '', ville = r['Ville'] || '';
   const hourly = parseFloat(emp.salaire_horaire) || 0;
-  const civilite = r['Civilite'] || '';
+  const civilite = emp.civilite || r['Civilite'] || '';
   const v = {
     civilite,
     prenom: emp.first_name || '', nom: (emp.last_name || '').toUpperCase(), nom_complet: (emp.first_name || '') + ' ' + (emp.last_name || '').toUpperCase(),

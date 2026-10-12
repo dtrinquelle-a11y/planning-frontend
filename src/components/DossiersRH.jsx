@@ -3,7 +3,7 @@ import axios from 'axios';
 import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 import { API } from '../config';
-import ContratModal from './ContratModal';
+import ContratsTravail from './ContratsTravail';
 import ClassificationBlock from './ClassificationBlock';
 import { SALARY_DEFAULTS } from '../ccHpa';
 
@@ -46,7 +46,7 @@ export default function DossiersRH() {
   const [toast, setToast] = useState('');
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
-  const [contratOpen, setContratOpen] = useState(false); // fenetre "Editer un contrat"
+  const [rhTab, setRhTab] = useState('dossiers'); // sous-sections : dossiers / contrats de travail
   const [ccCfg, setCcCfg] = useState(SALARY_DEFAULTS);   // valeurs de salaire de la CC HPA (Parametrage)
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key', 'cc_hpa').maybeSingle()
@@ -308,6 +308,17 @@ export default function DossiersRH() {
         </div>
       </div>
 
+      {/* Sous-sections */}
+      <div style={{ display: 'flex', gap: '4px', padding: '0 24px', background: C.card, borderBottom: '1px solid ' + C.border }}>
+        {[{ id: 'dossiers', label: 'Dossiers des salariés' }, { id: 'contrats', label: '📄 Contrats de travail' }].map(t => (
+          <button key={t.id} onClick={() => { setRhTab(t.id); if (t.id === 'dossiers') loadAll(); }}
+            style={{ padding: '10px 14px', background: 'none', border: 'none', borderBottom: '2px solid ' + (rhTab === t.id ? C.purple : 'transparent'), color: rhTab === t.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', fontWeight: rhTab === t.id ? 600 : 500 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {rhTab === 'contrats' ? <ContratsTravail /> : (
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', minHeight: 'calc(100vh - 80px)' }}>
         {/* Liste salariés */}
         <div style={{ borderRight: '1px solid ' + C.border, padding: '16px' }}>
@@ -416,10 +427,6 @@ export default function DossiersRH() {
                   {selectedEmp.is_active && (
                     <span style={{ background: '#DCFCE7', color: '#16A34A', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>✓ Compte actif</span>
                   )}
-                  <button onClick={() => setContratOpen(true)}
-                    style={{ background: C.card, border: '1px solid ' + C.purple + '66', borderRadius: '8px', padding: '10px 16px', color: C.purple, fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
-                    📄 Éditer un contrat
-                  </button>
                   {!accountIds.has(selectedEmp.id) && (
                     <button onClick={() => createAccessLink(selectedEmp)} disabled={creatingLink}
                       style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '10px 16px', color: '#fff', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600, cursor: creatingLink ? 'not-allowed' : 'pointer', opacity: creatingLink ? 0.7 : 1 }}>
@@ -441,8 +448,6 @@ export default function DossiersRH() {
                   )}
                 </div>
               </div>
-
-              {contratOpen && <ContratModal emp={selectedEmp} responses={responses} onClose={() => setContratOpen(false)} onSaved={() => loadEmpDetails(selectedEmp)} />}
 
               {/* Lien de premier acces genere */}
               {accessLink && accessLink.empId === selectedEmp.id && (
@@ -594,6 +599,7 @@ export default function DossiersRH() {
           )}
         </div>
       </div>
+      )}
 
       {toast && <div style={{ position: 'fixed', bottom: '24px', right: '24px', background: C.card, border: '1px solid ' + (toast.color || C.green), borderRadius: '8px', padding: '10px 16px', fontSize: '12px', color: toast.color || C.green, zIndex: 200, boxShadow: '0 4px 12px ' + C.shadow }}>{toast.msg}</div>}
     </div>

@@ -7,6 +7,7 @@ import supabase from '../supabase';
 import { absenceType, absenceCovers } from '../absences';
 import { checkEmployeeWeek } from '../legalChecks';
 import { API } from '../config';
+import { usePerms } from '../permissions';
 
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
 const ALL = 'Tous'; // vue de tous les services a la fois
@@ -63,6 +64,8 @@ function calcHeuresEmp(empId, shiftsMap) {
 }
 
 export default function Planning() {
+  const { can } = usePerms();
+  const readOnly = !can('planning_modifier'); // Parametrage > Roles et droits
   const { colors: C } = useTheme();
   const [service, setService] = useState('Accueil');
   const [weekOffset, setWeekOffset] = useState(0);
@@ -88,6 +91,8 @@ export default function Planning() {
   const [tplBusy, setTplBusy] = useState(false);
   const [tempForm, setTempForm] = useState({ first_name: '', last_name: '', role: '' });
   const [dragEmpIdx, setDragEmpIdx] = useState(null);
+  const [dragShift, setDragShift] = useState(null); // creneau en cours de glisser-deposer
+  const [dropKey, setDropKey] = useState(null);     // case survolee pendant le glisser
   const [copyModal, setCopyModal] = useState(false);
   const [copyEmpId, setCopyEmpId] = useState('');
   const [copyTargetOffset, setCopyTargetOffset] = useState(1);
@@ -238,6 +243,7 @@ export default function Planning() {
   }
 
   function openModal(emp, dayIdx, existingShift=null) {
+    if (readOnly) { showToast('Lecture seule : vous n\'avez pas le droit de modifier le planning'); return; }
     const date = fmtDate(addDays(mon,dayIdx));
     const sh = existingShift ? dbShifts.find(s=>s.id===existingShift.shift_type)||dbShifts[0] : dbShifts[0];
     setForm({
@@ -345,7 +351,32 @@ export default function Planning() {
     finally { setSavingShift(false); }
   }
 
+  // Glisser-deposer d'un creneau vers un autre jour et/ou un autre salarie (Ctrl ou Alt enfonce : copie)
+  async function dropShift(shift, emp, date, copy) {
+    if (readOnly) { showToast('Lecture seule : vous n\'avez pas le droit de modifier le planning'); return; }
+    setDragShift(null); setDropKey(null);
+    const from = String(shift.work_date).slice(0, 10);
+    if (!copy && shift.employee_id === emp.id && from === date) return;
+    const absent = shift.shift_type !== 'repos' && absences.some(a => a.employee_id === emp.id && a.status === 'acceptee' && absenceCovers(a, date));
+    if (absent && !window.confirm(emp.first_name + ' est absent(e) ce jour-là (absence acceptée).\n' + (copy ? 'Copier' : 'Déplacer') + ' quand même le créneau ?')) return;
+    try {
+      if (copy) {
+        await axios.post(API + '/schedules', { employee_id: emp.id, work_date: date, start_time: shift.start_time, end_time: shift.end_time, shift_type: shift.shift_type, break_minutes: shift.break_minutes || 0, note: shift.note || null });
+      } else {
+        await axios.patch(API + '/schedules/' + shift.id, { employee_id: emp.id, work_date: date });
+      }
+      await loadShifts();
+      loadMonthlySummary();
+      const who = shift.employee_id !== emp.id ? ' à ' + emp.first_name : '';
+      showToast((copy ? 'Créneau copié' : 'Créneau déplacé') + who + ' · ' + date.split('-').reverse().slice(0, 2).join('/'));
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      showToast(/no_overlap|existe|duplicate|unique/i.test(msg) ? 'Ce salarié a déjà un créneau à cette heure ce jour-là' : 'Erreur : ' + msg);
+    }
+  }
+
   async function deleteShift(e, shiftId, empId, date) {
+    if (readOnly) { e.stopPropagation(); showToast('Lecture seule'); return; }
     e.stopPropagation();
     try {
       await axios.delete(API+'/schedules/'+shiftId);
@@ -362,6 +393,7 @@ export default function Planning() {
   }
 
   async function publishWeek() {
+    if (readOnly) { showToast('Lecture seule : vous n\'avez pas le droit de modifier le planning'); return; }
     try { const r = await axios.post(API+'/schedules/publish',{week:fmtDate(mon)}); showToast(r.data.published+' creneau(x) publie(s)'); }
     catch { showToast('Erreur'); }
   }
@@ -447,6 +479,7 @@ export default function Planning() {
   }
 
   async function moveEmp(fromIdx, toIdx) {
+    if (readOnly) return;
     const newList = [...allInService];
     const [moved] = newList.splice(fromIdx, 1);
     newList.splice(toIdx, 0, moved);
@@ -499,11 +532,12 @@ export default function Planning() {
           <span style={{fontSize:'12px',minWidth:'180px',textAlign:'center',color:C.text}}>{weekLabel}</span>
           <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.text,cursor:'pointer',padding:'4px 10px',fontSize:'13px',fontFamily:'inherit'}}>{'>'}</button>
           <button onClick={()=>setWeekOffset(0)} style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',color:C.muted,cursor:'pointer',padding:'4px 10px',fontSize:'11px',fontFamily:'inherit'}}>Auj.</button>
-          {!isAll&&<button onClick={()=>setModal('manage')} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 12px',color:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} title="Gerer les equipiers">⚙️</button>}
-          <button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>
-          {!isAll&&<button onClick={openTemplates} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}} title="Modèles de semaine">📋 Modèles</button>}
+          {readOnly&&<span style={{fontSize:'11px',color:C.muted,background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'5px 10px'}}>👁 Lecture seule</span>}
+          {!isAll&&!readOnly&&<button onClick={()=>setModal('manage')} style={{background:C.bg,border:'1px solid '+C.border,borderRadius:'6px',padding:'6px 12px',color:C.muted,cursor:'pointer',fontSize:'11px',fontFamily:'inherit'}} title="Gerer les equipiers">⚙️</button>}
+          {!readOnly&&<button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>}
+          {!isAll&&!readOnly&&<button onClick={openTemplates} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}} title="Modèles de semaine">📋 Modèles</button>}
           <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>{exportingPDF?'...':'↓ PDF'}</button>
-          <button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>
+          {!readOnly&&<button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>}
         </div>
       </div>
 
@@ -562,7 +596,7 @@ export default function Planning() {
                 <React.Fragment key={emp.id}>
                 {header&&<div style={{padding:'5px 12px',background:'#EEF2FF',borderBottom:'1px solid '+C.border,borderTop:ei>0?'1px solid '+C.border:'none',fontSize:'10px',fontWeight:700,letterSpacing:'0.08em',color:'#4338CA'}}>{(emp.service||'Sans service').toUpperCase()}</div>}
                 <div
-                  draggable={!isAll} onDragStart={()=>setDragEmpIdx(ei)} onDragOver={e=>e.preventDefault()}
+                  draggable={!isAll&&!readOnly} onDragStart={()=>setDragEmpIdx(ei)} onDragOver={e=>e.preventDefault()}
                   onDrop={()=>{ if(dragEmpIdx!==null&&dragEmpIdx!==ei){moveEmp(dragEmpIdx,ei);setDragEmpIdx(null);} }}
                   style={{display:'grid',gridTemplateColumns:'180px repeat(7, 1fr)',borderBottom:ei<filtered.length-1?'1px solid '+C.border:'none',opacity:dragEmpIdx===ei?0.5:1}}>
                   <div style={{padding:'8px',borderRight:'1px solid '+C.border,display:'flex',alignItems:'flex-start',gap:'8px',background:'#fff',cursor:'grab'}}>
@@ -602,8 +636,11 @@ export default function Planning() {
                     const key=emp.id+'-'+date;
                     const dayShifts=shiftsMap[key]||[];
                     return(
-                      <div key={di} style={{padding:'3px',minHeight:'80px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:hovered===key?C.borderLight:'transparent'}}
-                        onClick={()=>openModal(emp,di)} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(null)}>
+                      <div key={di} style={{padding:'3px',minHeight:'80px',borderRight:di<6?'1px solid '+C.border:'none',cursor:'pointer',background:dropKey===key?C.purpleLight:hovered===key?C.borderLight:'transparent',outline:dropKey===key?'2px dashed '+C.purple:'none',outlineOffset:'-3px'}}
+                        onClick={()=>openModal(emp,di)} onMouseEnter={()=>setHovered(key)} onMouseLeave={()=>setHovered(null)}
+                        onDragOver={e=>{ if(!dragShift)return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect=(e.ctrlKey||e.altKey)?'copy':'move'; if(dropKey!==key)setDropKey(key); }}
+                        onDragLeave={()=>{ if(dropKey===key)setDropKey(null); }}
+                        onDrop={e=>{ if(!dragShift)return; e.preventDefault(); e.stopPropagation(); dropShift(dragShift,emp,date,e.ctrlKey||e.altKey); }}>
                         {absencesFor(emp.id,date).map(ab=>{const t=absenceType(ab.type);const pending=ab.status==='en_attente';return(
                           <div key={ab.id} {...(pending?{'data-pdf-hide':true}:{})} title={pending?'Demande en attente : '+t.label:t.label}
                             style={{borderRadius:'5px',padding:'2px 6px',marginBottom:'2px',fontSize:'10px',fontWeight:600,textAlign:'center',background:pending?'transparent':t.bg,color:t.color,border:(pending?'1px dashed ':'1px solid ')+t.color}}>
@@ -615,6 +652,9 @@ export default function Planning() {
                               const shDef=dbShifts.find(s=>s.id===shift.shift_type)||DEFAULT_SHIFTS[4];
                               return(
                                 <div key={si} onClick={e=>{e.stopPropagation();openModal(emp,di,shift);}}
+                                  draggable={!readOnly} title={readOnly ? undefined : 'Glisser pour déplacer (Ctrl ou Alt : copier)'}
+                                  onDragStart={e=>{ e.stopPropagation(); e.dataTransfer.effectAllowed='copyMove'; e.dataTransfer.setData('text/plain',shift.id); setDragShift(shift); }}
+                                  onDragEnd={()=>{ setDragShift(null); setDropKey(null); }}
                                   style={{borderRadius:'5px',padding:'3px 6px',fontSize:'10px',fontWeight:500,background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,cursor:'pointer',position:'relative',lineHeight:1.3}}>
                                   {shDef.label}
                                   {shift.shift_type!=='repos'&&<div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?.slice(0,5)}–{shift.end_time?.slice(0,5)}{parseInt(shift.break_minutes||0)>0?' ('+shift.break_minutes+'m)':''}</div>}

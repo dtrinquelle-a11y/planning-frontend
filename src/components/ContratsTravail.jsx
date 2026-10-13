@@ -64,6 +64,8 @@ export default function ContratsTravail() {
   const [already, setAlready] = useState(DEJA);      // "j'ai deja le contrat" : seule la case de depot reste
   const [busy, setBusy] = useState(null);
   const [showSigned, setShowSigned] = useState(false);
+  const [expanded, setExpanded] = useState(new Set()); // lignes depliees (repliees par defaut)
+  const toggleRow = id => setExpanded(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [toast, setToast] = useState(null);
   const fileRef = useRef(null);
   const uploadFor = useRef(null);
@@ -278,28 +280,26 @@ export default function ContratsTravail() {
             const sugg = suggestions(e.role);
             const coef = parseInt(e.coefficient, 10) || null;
             const open = !signed && !deja && r;
+            const isOpen = open && expanded.has(emp.id);
             const shownSalary = r ? (r.salaryField && r.salaryField in own ? own[r.salaryField] : r.known.salaire_mensuel) : '';
             const defaultKeys = r ? Object.keys(r.values).filter(k => DEFAULTS.has(resolveKey(k)) && !r.missing.includes(k)) : [];
             const boxes = r ? [...new Set([...r.missing, ...Object.keys(own).filter(k => !k.startsWith('__') && !CLASSIF.has(resolveKey(k)) && !DEFAULTS.has(resolveKey(k)))])] : [];
             const todo = r ? r.missing.length + (r.has('coefficient') && !coef ? 1 : 0) : 0;
             return (
-              <div key={emp.id} style={{ background: C.card, border: '1px solid ' + C.border, borderLeft: '4px solid ' + (signed ? C.green : deja ? C.muted : todo ? C.amber : C.purple), borderRadius: '12px', padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: '200px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>{emp.first_name} {emp.last_name}{!emp.is_active && <span style={{ fontSize: '11px', color: C.amber, fontWeight: 500 }}> · compte à valider</span>}</div>
-                    <div style={{ fontSize: '12px', color: C.muted }}>
-                      {emp.role || 'Poste ?'} · {emp.service} · {emp.contract_type}{emp.hire_date ? ' · du ' + fr(emp.hire_date) : ''}{emp.contract_end_date ? ' au ' + fr(emp.contract_end_date) : ''}
+              <div key={emp.id} style={{ background: C.card, border: '1px solid ' + C.border, borderLeft: '4px solid ' + (signed ? C.green : deja ? C.muted : todo ? C.amber : C.purple), borderRadius: '12px', padding: '10px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  {/* Fleche : deplie / replie le detail */}
+                  <button onClick={() => open && toggleRow(emp.id)} disabled={!open} aria-label={isOpen ? 'Replier' : 'Déplier'}
+                    style={{ width: '28px', height: '28px', borderRadius: '8px', border: '1px solid ' + C.border, background: isOpen ? C.purpleLight : C.bg, color: open ? C.purple : C.border, cursor: open ? 'pointer' : 'default', fontSize: '12px', flexShrink: 0, transition: 'transform .15s', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</button>
+                  <div onClick={() => open && toggleRow(emp.id)} style={{ flex: 1, minWidth: '200px', cursor: open ? 'pointer' : 'default' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>
+                      {emp.first_name} {emp.last_name}{!emp.is_active && <span style={{ fontSize: '11px', color: C.amber, fontWeight: 500 }}> · compte à valider</span>}
+                      <span style={{ fontSize: '12px', fontWeight: 400, color: C.muted }}> · {emp.role || 'Poste ?'}{emp.hire_date ? ' · ' + fr(emp.hire_date) : ''}{emp.contract_end_date ? ' → ' + fr(emp.contract_end_date) : ''}</span>
                     </div>
-                    <div style={{ fontSize: '11px', marginTop: '3px', color: signed ? C.green : C.muted }}>
+                    <div style={{ fontSize: '11px', color: signed ? C.green : C.muted }}>
                       {signed ? '✓ Contrat signé déposé le ' + fr(emp.contrat_signe_at) : deja ? 'Contrat déjà établi : déposez-le une fois signé' : emp.contrat_genere_at ? 'Contrat généré le ' + fr(emp.contrat_genere_at) + ' · en attente de signature' : 'Contrat pas encore généré'}
                     </div>
                   </div>
-                  {open && templates.length > 0 && (
-                    <select value={tplId || ''} onChange={ev => { const id = ev.target.value; setChoice(c => ({ ...c, [emp.id]: id })); ensureTemplate(id).catch(err => showToast('Modèle illisible : ' + templateError(err), C.red)); }}
-                      style={{ ...btn, fontWeight: 400, maxWidth: '200px' }} title="Modèle de contrat">
-                      {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  )}
                   {open && (
                     <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: todo ? C.amberLight : C.greenLight, color: todo ? C.amber : C.green }}>
                       {todo ? todo + ' à compléter' : '✓ Complet'}
@@ -322,8 +322,15 @@ export default function ContratsTravail() {
                   )}
                 </div>
 
-                {open && (
+                {isOpen && (
                   <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid ' + C.border }}>
+                    {templates.length > 1 && (
+                      <label style={{ ...lbl, display: 'block', marginBottom: '10px', maxWidth: '360px' }}>MODÈLE DE CONTRAT
+                        <select value={tplId || ''} onChange={ev => { const id = ev.target.value; setChoice(c => ({ ...c, [emp.id]: id })); ensureTemplate(id).catch(err => showToast('Modèle illisible : ' + templateError(err), C.red)); }} style={inp}>
+                          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </label>
+                    )}
                     {/* Classification CC HPA : emploi -> categorie, coefficient -> salaire */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 2fr) minmax(150px, 1fr) minmax(170px, 1fr) auto', gap: '10px', alignItems: 'end' }}>
                       <label style={lbl}>EMPLOI DE LA GRILLE → CATÉGORIE

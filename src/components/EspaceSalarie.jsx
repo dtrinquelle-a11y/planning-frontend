@@ -9,6 +9,7 @@ import { API } from '../config';
 import DocsASigner from './DocsASigner';
 import MesHoraires from './MesHoraires';
 import NotifCard from './NotifCard';
+import { usePerms } from '../permissions';
 import { fetchTimeclockEnabled } from '../declarations';
 import useIsMobile, { isMobileNow } from '../useIsMobile';
 
@@ -61,6 +62,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
   const [absSaving,setAbsSaving]=useState(false);
   const [absMsg,setAbsMsg]=useState(null);
   const [tabBadges,setTabBadges]=useState({});
+  const { can } = usePerms(); // droits du salarie (Parametrage > Roles et droits)
   const [declarative,setDeclarative]=useState(false); // pointeuse desactivee : onglet "Mes horaires"
   useEffect(()=>{fetchTimeclockEnabled().then(on=>setDeclarative(!on)).catch(()=>{});},[]);
   // Heures modulees validees par le manager (periode de modulation en cours : 1er nov -> 31 oct)
@@ -253,7 +255,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
 
   // Affichage simplifie : salarie sur telephone
   const simple=!isManager&&mobile;
-  const TABS=[{id:'planning',label:'Mon planning',icon:'📅'},{id:'heures',label:'Mes heures',icon:'📊'},{id:'absences',label:'Absences',icon:'🏖️'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires',icon:'⏱️'}]:[]),{id:'documents',label:'Mes documents',icon:'📄'},{id:'signer',label:'Documents communs',icon:'📚'}];
+  const TABS=[{id:'planning',label:'Mon planning',icon:'📅'},{id:'heures',label:'Mes heures',icon:'📊'},{id:'absences',label:'Absences',icon:'🏖️'},...(declarative?[{id:'horaires',label:isManager?'Horaires':'Mes horaires',icon:'⏱️'}]:[]),{id:'documents',label:'Mes documents',icon:'📄'},{id:'signer',label:'Documents communs',icon:'📚'}].filter(t=>{const need={heures:'mes_heures',horaires:'mes_horaires',documents:'mes_documents',signer:'documents_communs'}[t.id];return isManager||!need||can(need);});
   const nextShiftCard=nextShift&&(
     <div style={{background:C.greenLight,border:'1px solid '+C.green+'44',borderRadius:simple?'14px':'8px',padding:simple?'14px 16px':'10px 14px',display:'flex',alignItems:'center',gap:'12px',marginBottom:'14px'}}>
       <div style={{fontSize:'20px',color:C.green}}>→</div>
@@ -291,7 +293,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
         <NotifCard big/>
         {big('📅','Mon planning',heuresPlanifiees.toFixed(1)+' h prévues cette semaine',()=>setTab('planning'),'#5B4FD6',0)}
         {declarative
-          ? big('⏱️','Mes horaires',tabBadges.horaires>0?tabBadges.horaires+' journée'+(tabBadges.horaires>1?'s':'')+' à valider':'Tout est validé',()=>setTab('horaires'),tabBadges.horaires>0?'#D97706':'#16A34A',tabBadges.horaires)
+          ? can('mes_horaires')&&big('⏱️','Mes horaires',tabBadges.horaires>0?tabBadges.horaires+' journée'+(tabBadges.horaires>1?'s':'')+' à valider':'Tout est validé',()=>setTab('horaires'),tabBadges.horaires>0?'#D97706':'#16A34A',tabBadges.horaires)
           : onOpenPointeuse&&big('📍','Pointer','Arrivée / départ',onOpenPointeuse,'#16A34A',0)}
         {tabBadges.signer>0&&(
           <div onClick={()=>setTab('signer')} style={{cursor:'pointer',background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'14px',padding:'14px 16px',marginBottom:'12px',fontSize:'14px',color:C.red,fontWeight:600}}>
@@ -409,6 +411,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
         )}
         {tab==='absences'&&(
           <div>
+            {(isManager||can('absences_demande'))&&(<>
             <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'14px'}}>DEMANDER UNE ABSENCE</div>
             <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'18px'}}>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'10px',marginBottom:'10px'}}>
@@ -434,6 +437,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
               <button onClick={submitAbsence} disabled={absSaving} style={{background:C.purple,border:'none',borderRadius:'6px',padding:'8px 18px',color:'#fff',fontSize:'12px',fontFamily:'inherit',fontWeight:600,cursor:absSaving?'not-allowed':'pointer',opacity:absSaving?0.7:1}}>{absSaving?'Envoi...':'Envoyer la demande'}</button>
             </div>
 
+            </>)}
             <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'10px'}}>MES DEMANDES</div>
             {absences.length===0?(
               <div style={{color:C.muted,fontSize:'12px',textAlign:'center',padding:'20px'}}>Aucune demande pour le moment.</div>

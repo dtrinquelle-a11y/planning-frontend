@@ -4,6 +4,7 @@ import supabase from '../supabase';
 import { useTheme } from '../ThemeContext';
 import { API } from '../config';
 import ContratsTravail from './ContratsTravail';
+import { usePerms } from '../permissions';
 import ClassificationBlock from './ClassificationBlock';
 import { SALARY_DEFAULTS } from '../ccHpa';
 
@@ -46,7 +47,10 @@ export default function DossiersRH() {
   const [toast, setToast] = useState('');
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
-  const [rhTab, setRhTab] = useState('dossiers'); // sous-sections : dossiers / contrats de travail
+  const { can } = usePerms();
+  const [rhTabChoice, setRhTab] = useState('dossiers'); // sous-sections : dossiers / contrats de travail
+  const rhTabs = [{ id: 'dossiers', label: 'Dossiers des salariés' }, { id: 'contrats', label: '📄 Contrats de travail' }].filter(t => can(t.id === 'dossiers' ? 'dossiers_rh' : 'contrats'));
+  const rhTab = rhTabs.some(t => t.id === rhTabChoice) ? rhTabChoice : rhTabs[0]?.id;
   const [ccCfg, setCcCfg] = useState(SALARY_DEFAULTS);   // valeurs de salaire de la CC HPA (Parametrage)
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key', 'cc_hpa').maybeSingle()
@@ -310,7 +314,7 @@ export default function DossiersRH() {
 
       {/* Sous-sections */}
       <div style={{ display: 'flex', gap: '4px', padding: '0 24px', background: C.card, borderBottom: '1px solid ' + C.border }}>
-        {[{ id: 'dossiers', label: 'Dossiers des salariés' }, { id: 'contrats', label: '📄 Contrats de travail' }].map(t => (
+        {rhTabs.map(t => (
           <button key={t.id} onClick={() => { setRhTab(t.id); if (t.id === 'dossiers') loadAll(); }}
             style={{ padding: '10px 14px', background: 'none', border: 'none', borderBottom: '2px solid ' + (rhTab === t.id ? C.purple : 'transparent'), color: rhTab === t.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', fontWeight: rhTab === t.id ? 600 : 500 }}>
             {t.label}

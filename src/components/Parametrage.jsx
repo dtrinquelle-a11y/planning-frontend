@@ -4,6 +4,8 @@ import axios from 'axios';
 import Sauvegardes from './Sauvegardes';
 import FermeturesEntreprise from './FermeturesEntreprise';
 import ModelesContrats from './ModelesContrats';
+import RolesDroits from './RolesDroits';
+import { usePerms } from '../permissions';
 import GrilleCcHpa from './GrilleCcHpa';
 import { API } from '../config';
 
@@ -18,6 +20,7 @@ const SHIFT_COLORS = {
 
 export default function Parametrage() {
   const { colors: C } = useTheme();
+  const { can, isAdmin } = usePerms();
   const [section, setSection] = useState('shifts');
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
@@ -65,7 +68,10 @@ export default function Parametrage() {
     { id: 'conges', label: '🏖️ Congés payés', icon: '🏖️' },
     { id: 'contrats', label: '📄 Contrats', icon: '📄' },
     { id: 'sauvegardes', label: '💾 Sauvegardes', icon: '💾' },
-  ];
+    { id: 'roles', label: '👥 Rôles et droits', icon: '👥' },
+  ].filter(x => x.id === 'roles' ? isAdmin : x.id === 'sauvegardes' ? can('sauvegardes') : x.id === 'contrats' ? can('contrats') : can('parametrage'));
+  // Section affichee : celle choisie si elle est autorisee, sinon la premiere autorisee
+  const sec = sections.some(x => x.id === section) ? section : sections[0]?.id;
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" }}>
@@ -83,7 +89,7 @@ export default function Parametrage() {
         <div style={{ borderRight: '1px solid ' + C.border, padding: '16px', background: C.card }}>
           {sections.map(s => (
             <button key={s.id} onClick={() => setSection(s.id)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', border: 'none', background: section === s.id ? C.purpleLight : 'none', color: section === s.id ? C.purple : C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: section === s.id ? 600 : 400, marginBottom: '4px', textAlign: 'left' }}>
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', border: 'none', background: sec === s.id ? C.purpleLight : 'none', color: sec === s.id ? C.purple : C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: sec === s.id ? 600 : 400, marginBottom: '4px', textAlign: 'left' }}>
               <span style={{ fontSize: '16px' }}>{s.icon}</span>{s.label}
             </button>
           ))}
@@ -95,7 +101,7 @@ export default function Parametrage() {
           ) : (
             <>
               {/* SHIFTS */}
-              {section === 'shifts' && (
+              {sec === 'shifts' && (
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Shifts par défaut</div>
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Horaires proposés lors de la création d'un créneau dans le planning.</div>
@@ -148,7 +154,7 @@ export default function Parametrage() {
               )}
 
               {/* CAMPING */}
-              {section === 'camping' && (
+              {sec === 'camping' && (
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Informations camping</div>
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Affichées dans les PDF et l'onboarding.</div>
@@ -175,7 +181,7 @@ export default function Parametrage() {
               )}
 
               {/* GEOLOC */}
-              {section === 'geoloc' && (
+              {sec === 'geoloc' && (
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Géolocalisation pointeuse</div>
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Coordonnées du site et périmètre autorisé pour le pointage.</div>
@@ -210,7 +216,7 @@ export default function Parametrage() {
               )}
 
               {/* CC HPA */}
-              {section === 'cc_hpa' && (
+              {sec === 'cc_hpa' && (
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Seuils CC HPA · IDCC 1631</div>
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Paramètres de la convention collective Hôtellerie de Plein Air.</div>
@@ -278,11 +284,12 @@ export default function Parametrage() {
                 </div>
               )}
 
-              {section === 'sauvegardes' && <Sauvegardes />}
-              {section === 'contrats' && <ModelesContrats />}
+              {sec === 'sauvegardes' && <Sauvegardes />}
+              {sec === 'contrats' && <ModelesContrats />}
+              {sec === 'roles' && <RolesDroits />}
 
               {/* CONGES PAYES : periodes ou les salaries ne peuvent pas poser de CP */}
-              {section === 'conges' && (() => {
+              {sec === 'conges' && (() => {
                 const periods = settings.cp_blackout || [];
                 const setPeriods = list => setSettings(prev => ({ ...prev, cp_blackout: list }));
                 const update = (i, patch) => setPeriods(periods.map((p, j) => j === i ? { ...p, ...patch } : p));
@@ -337,7 +344,7 @@ export default function Parametrage() {
 
               {/* POINTEUSE */}
 
-              {section === 'pointeuse' && (
+              {sec === 'pointeuse' && (
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Paramètres Pointeuse</div>
                   <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px' }}>Configuration de la pointeuse et gestion des photos.</div>

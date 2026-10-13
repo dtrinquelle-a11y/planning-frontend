@@ -16,12 +16,13 @@ import DossiersRH from './components/DossiersRH';
 import Confidentialite from './components/Confidentialite';
 import ResetPassword from './components/ResetPassword';
 import Absences from './components/Absences';
-import ExportPaie from './components/ExportPaie';
+import PaiePage from './components/PaiePage';
 import Realise from './components/Realise';
 import { fetchManagerBadges, fetchEmployeeBadges, Badge } from './badges';
 import { fetchTimeclockEnabled } from './declarations';
 import useIsMobile from './useIsMobile';
 import CampLogo from './CampLogo';
+import { PermContext, canFor, PAGE_PERM } from './permissions';
 
 function AppInner() {
   const { colors: C, darkMode, toggle } = useTheme();
@@ -36,6 +37,7 @@ function AppInner() {
   const authRequestId = useRef(0);
   const [badges, setBadges] = useState({}); // pastilles : nombre d'elements a traiter par onglet
   const [timeclockOn, setTimeclockOn] = useState(true); // pointeuse active (sinon : horaires declares)
+  const [rolesCfg, setRolesCfg] = useState(null);       // droits par role (Parametrage > Roles et droits)
   const mobile = useIsMobile();
   const justLoggedInRef = useRef(false);
 
@@ -161,6 +163,7 @@ function AppInner() {
       .catch(() => {});
     refresh();
     fetchTimeclockEnabled().then(setTimeclockOn).catch(() => {});
+    supabase.from('app_settings').select('value').eq('key', 'roles_droits').maybeSingle().then(({ data }) => setRolesCfg(data?.value || {}), () => {});
     // Derniere activite dans l'application (tableau de bord "Activite du jour" : qui ne s'est pas connecte)
     const touch = () => supabase.rpc('touch_last_seen').then(() => {}, () => {});
     touch();
@@ -209,19 +212,27 @@ function AppInner() {
     : [
         { id: 'salarie', label: 'Mon Planning' },
         // Pointeuse desactivee : les horaires se valident dans Mon Planning > Mes horaires
-        ...(timeclockOn ? [{ id: 'pointage', label: 'Pointeuse' }] : []),
+        ...(timeclockOn && canFor(profile?.role, rolesCfg, 'pointeuse') ? [{ id: 'pointage', label: 'Pointeuse' }] : []),
       ];
+
+  const role = profile?.role;
+  const can = key => canFor(role, rolesCfg, key);
+  const pageAllowed = id => isManager ? (PAGE_PERM[id] || []).some(can) : id === 'salarie' || (id === 'pointage' && can('pointeuse'));
+  const allowedNav = navItems.filter(p => pageAllowed(p.id));
+  const cur = pageAllowed(page) ? page : (allowedNav[0]?.id || 'salarie');
+  const perms = { can, role, isAdmin: role === 'admin' };
 
   // Salarie sur telephone : barre compacte (logo, retour a l'accueil, theme, deconnexion), les gros boutons sont dans son espace
   const simpleNav = !isManager && mobile;
 
   return (
+    <PermContext.Provider value={perms}>
     <div style={{ fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", background: C.bg, minHeight: '100vh' }}>
       {simpleNav ? (
         <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700 }}>HPA</span>
           <CampLogo height={26} />
-          {page !== 'salarie' && <button onClick={() => setPage('salarie')} style={{ padding: '9px 14px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '15px', fontWeight: 600, fontFamily: 'inherit' }}>‹ Accueil</button>}
+          {cur !== 'salarie' && <button onClick={() => setPage('salarie')} style={{ padding: '9px 14px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '15px', fontWeight: 600, fontFamily: 'inherit' }}>‹ Accueil</button>}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button onClick={toggle} aria-label="Changer de thème" style={{ width: '40px', height: '40px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, cursor: 'pointer', fontSize: '17px' }}>{darkMode ? '☀️' : '🌙'}</button>
             <button onClick={handleLogout} style={{ height: '40px', padding: '0 14px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '14px', fontWeight: 500, fontFamily: 'inherit' }}>Quitter</button>
@@ -235,9 +246,9 @@ function AppInner() {
           <span style={{ width: '1px', height: '24px', background: C.border, margin: '0 4px' }} />
           <CampLogo height={30} />
         </span>
-        {navItems.map(p => (
-          <button key={p.id} onClick={() => setPage(p.id)} className={page === p.id ? undefined : 'nav-tab'}
-            style={{ position: 'relative', padding: '7px 12px', borderRadius: '999px', border: 'none', background: page === p.id ? C.purpleLight : 'transparent', color: page === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontWeight: page === p.id ? 600 : 500, fontFamily: 'inherit' }}
+        {allowedNav.map(p => (
+          <button key={p.id} onClick={() => setPage(p.id)} className={cur === p.id ? undefined : 'nav-tab'}
+            style={{ position: 'relative', padding: '7px 12px', borderRadius: '999px', border: 'none', background: cur === p.id ? C.purpleLight : 'transparent', color: cur === p.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontWeight: cur === p.id ? 600 : 500, fontFamily: 'inherit' }}
           >{p.label}<Badge count={isManager ? (p.id === 'absences' ? badges.absences : p.id === 'dossiers' ? badges.dossiers : p.id === 'realise' ? badges.realise : 0) : (p.id === 'salarie' ? badges.salarie : 0)} /></button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -249,20 +260,21 @@ function AppInner() {
       </nav>
       )}
       <div style={{ padding: '0' }}>
-        {page === 'dashboard' && <Dashboard profile={profile} onNavigate={setPage} />}
-        {page === 'planning' && <Planning profile={profile} />}
-        {page === 'timeline' && <Timeline profile={profile} />}
-        {page === 'salarie' && <EspaceSalarie profile={profile} onOpenPointeuse={timeclockOn ? () => setPage('pointage') : null} />}
-        {page === 'qrcode' && isManager && <QRCodePage />}
-        {page === 'pointage' && <Pointeuse employeeId={profile?.employees?.id || profile?.employee_id} employeeName={(profile?.employees?.first_name || profile?.first_name || '') + ' ' + (profile?.employees?.last_name || profile?.last_name || '')} />}
-        {page === 'ged' && isManager && <DocumentsPage profile={profile} />}
-        {page === 'absences' && isManager && <Absences />}
-        {page === 'paie' && isManager && <ExportPaie />}
-        {page === 'realise' && isManager && <Realise />}
-        {page === 'dossiers' && isManager && <DossiersRH profile={profile} />}
-        {page === 'parametrage' && <Parametrage />}
+        {cur === 'dashboard' && <Dashboard profile={profile} onNavigate={setPage} />}
+        {cur === 'planning' && <Planning profile={profile} />}
+        {cur === 'timeline' && <Timeline profile={profile} />}
+        {cur === 'salarie' && <EspaceSalarie profile={profile} onOpenPointeuse={timeclockOn && can('pointeuse') ? () => setPage('pointage') : null} />}
+        {cur === 'qrcode' && isManager && <QRCodePage />}
+        {cur === 'pointage' && <Pointeuse employeeId={profile?.employees?.id || profile?.employee_id} employeeName={(profile?.employees?.first_name || profile?.first_name || '') + ' ' + (profile?.employees?.last_name || profile?.last_name || '')} />}
+        {cur === 'ged' && isManager && <DocumentsPage profile={profile} />}
+        {cur === 'absences' && isManager && <Absences />}
+        {cur === 'paie' && isManager && <PaiePage />}
+        {cur === 'realise' && isManager && <Realise />}
+        {cur === 'dossiers' && isManager && <DossiersRH profile={profile} />}
+        {cur === 'parametrage' && isManager && <Parametrage />}
       </div>
     </div>
+    </PermContext.Provider>
   );
 }
 

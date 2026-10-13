@@ -24,7 +24,7 @@ export async function fetchManagerBadges() {
   const [abs, dossiers, horaires] = await Promise.all([
     supabase.from('absence_requests').select('id', { count: 'exact', head: true }).eq('status', 'en_attente'),
     supabase.from('employees').select('id', { count: 'exact', head: true })
-      .eq('onboarding_completed', true).eq('is_active', false).eq('is_temp', false),
+      .eq('onboarding_completed', true).eq('is_active', false).eq('is_temp', false).is('archived_at', null),
     // Horaires declares que le salarie a corriges ou sur lesquels il est revenu, depuis la derniere visite du Realise
     supabase.from('work_declarations').select('id', { count: 'exact', head: true })
       .eq('by_manager', false).or('status.eq.modifie,status.eq.non_travaille,revisions.gt.0').gt('declared_at', getSeen('realise', 'manager')),

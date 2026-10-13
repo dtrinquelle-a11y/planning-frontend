@@ -81,7 +81,7 @@ export default function ContratsTravail() {
       supabase.from('app_settings').select('value').eq('key', 'cc_hpa').maybeSingle(),
     ]);
     // Salaries actifs, et dossiers d'onboarding termines en attente de validation
-    setEmps((e.data || []).filter(x => x.is_active || x.onboarding_completed));
+    setEmps((e.data || []).filter(x => !x.archived_at && (x.is_active || x.onboarding_completed)));
     const byEmp = {};
     (r.data || []).forEach(x => (byEmp[x.employee_id] = byEmp[x.employee_id] || []).push(x));
     setResponses(byEmp);

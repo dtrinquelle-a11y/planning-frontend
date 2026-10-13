@@ -142,6 +142,29 @@ export default function DossiersRH() {
     } finally { setSavingContract(false); }
   }
 
+  // Salarie parti : retire des listes, du planning et des rappels, sans rien effacer (dossier conserve 5 ans)
+  const [archiveFor, setArchiveFor] = useState(null); // { emp, date }
+  async function archiveEmployee() {
+    const { emp, date } = archiveFor;
+    if (!date) { showToast('Indiquez la date de sortie', C.red); return; }
+    const patch = { archived_at: new Date().toISOString(), is_active: false, contract_end_date: date };
+    const { error } = await supabase.from('employees').update(patch).eq('id', emp.id);
+    if (error) { showToast('Erreur : ' + error.message, C.red); return; }
+    setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, ...patch } : e));
+    if (selectedEmp?.id === emp.id) { setSelectedEmp(e => ({ ...e, ...patch })); setContractForm(f => f && ({ ...f, contract_end_date: date })); }
+    setArchiveFor(null);
+    showToast(emp.first_name + ' ' + emp.last_name + ' est archivé(e)');
+  }
+  async function unarchiveEmployee(emp) {
+    if (!window.confirm('Réactiver ' + emp.first_name + ' ' + emp.last_name + ' ?\n\nIl ou elle réapparaîtra dans le planning et les listes. Pensez à mettre à jour la date d\'embauche et la fin de contrat si c\'est une nouvelle embauche.')) return;
+    const patch = { archived_at: null, is_active: true };
+    const { error } = await supabase.from('employees').update(patch).eq('id', emp.id);
+    if (error) { showToast('Erreur : ' + error.message, C.red); return; }
+    setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, ...patch } : e));
+    if (selectedEmp?.id === emp.id) setSelectedEmp(e => ({ ...e, ...patch }));
+    showToast('Salarié réactivé');
+  }
+
   async function validateEmployee(emp) {
     if (!emp.service || emp.service === 'Non defini') { showToast("Choisissez d'abord un service dans « Affectation et contrat »", C.red); return; }
     await supabase.from('employees').update({ is_active: true }).eq('id', emp.id);
@@ -245,16 +268,19 @@ export default function DossiersRH() {
   }
 
   // Candidat qui n'a pas termine l'onboarding : affiche a part, pas dans la liste principale
-  const isInscriptionEnCours = e => !e.is_active && !e.onboarding_completed;
+  const isInscriptionEnCours = e => !e.is_active && !e.onboarding_completed && !e.archived_at;
   const inscriptions = employees.filter(isInscriptionEnCours);
+  const archivedCount = employees.filter(e => e.archived_at).length;
   const filtered = employees.filter(e => !isInscriptionEnCours(e)).filter(e => {
+    if (filter === 'archived') return !!e.archived_at;
+    if (e.archived_at) return false;
     if (filter === 'pending') return e.onboarding_completed && !e.is_active;
     if (filter === 'active') return e.is_active;
     if (filter === 'incomplete') return !e.onboarding_completed;
     return true;
   });
 
-  const pendingCount = employees.filter(e => e.onboarding_completed && !e.is_active).length;
+  const pendingCount = employees.filter(e => e.onboarding_completed && !e.is_active && !e.archived_at).length;
   const inp = { background: C.bg, border: '1px solid ' + C.border, borderRadius: '6px', padding: '6px 10px', color: C.text, fontSize: '12px', fontFamily: 'inherit' };
 
   // Liste des salaries actifs avec leurs coordonnees (CSV pour Excel). Volontairement sans n° de securite sociale ni IBAN.
@@ -342,6 +368,7 @@ export default function DossiersRH() {
               { id: 'pending', label: 'A valider' + (pendingCount > 0 ? ' (' + pendingCount + ')' : '') },
               { id: 'active', label: 'Actifs' },
               { id: 'incomplete', label: 'Incomplets' },
+              ...(archivedCount ? [{ id: 'archived', label: '📦 Archivés (' + archivedCount + ')' }] : []),
             ].map(f => (
               <button key={f.id} onClick={() => setFilter(f.id)}
                 style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid ' + (filter === f.id ? C.purple : C.border), background: filter === f.id ? C.purpleLight : 'none', color: filter === f.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '10px', fontFamily: 'inherit' }}>
@@ -365,7 +392,8 @@ export default function DossiersRH() {
                     <div style={{ fontSize: '10px', color: C.muted }}>{emp.service}</div>
                   </div>
                   <div style={{ flexShrink: 0 }}>
-                    {emp.onboarding_completed && !emp.is_active && <span style={{ fontSize: '9px', background: '#FEF3C7', color: '#D97706', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>A VALIDER</span>}
+                    {emp.archived_at && <span style={{ fontSize: '9px', background: '#F3F4F6', color: '#6B7280', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>{emp.contract_end_date ? 'SORTI LE ' + String(emp.contract_end_date).slice(0, 10).split('-').reverse().join('/') : 'ARCHIVÉ'}</span>}
+                    {emp.onboarding_completed && !emp.is_active && !emp.archived_at && <span style={{ fontSize: '9px', background: '#FEF3C7', color: '#D97706', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>A VALIDER</span>}
                     {emp.is_active && <span style={{ fontSize: '9px', background: '#DCFCE7', color: '#16A34A', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>ACTIF</span>}
                     {!emp.onboarding_completed && <span style={{ fontSize: '9px', background: '#F3F4F6', color: '#6B7280', padding: '2px 6px', borderRadius: '10px' }}>INCOMPLET</span>}
                     {!accountIds.has(emp.id) && <span style={{ display: 'block', marginTop: '3px', fontSize: '9px', background: '#FEF2F2', color: '#DC2626', padding: '2px 6px', borderRadius: '10px', textAlign: 'center' }}>SANS ACCÈS</span>}
@@ -432,7 +460,7 @@ export default function DossiersRH() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {!selectedEmp.is_active && selectedEmp.onboarding_completed && (
+                  {!selectedEmp.is_active && selectedEmp.onboarding_completed && !selectedEmp.archived_at && (
                     <button onClick={() => validateEmployee(selectedEmp)}
                       style={{ background: C.green, border: 'none', borderRadius: '8px', padding: '10px 20px', color: '#fff', fontSize: '13px', fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer' }}>
                       ✓ Valider le compte
@@ -449,6 +477,23 @@ export default function DossiersRH() {
                   )}
                   {accountIds.has(selectedEmp.id) && (
                     <span style={{ background: C.purpleLight, color: C.purple, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>✓ Accès application</span>
+                  )}
+                  {selectedEmp.archived_at ? (
+                    <>
+                      <span style={{ background: '#F3F4F6', color: '#6B7280', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600 }}>
+                        📦 Archivé{selectedEmp.contract_end_date ? ' · sorti le ' + String(selectedEmp.contract_end_date).slice(0, 10).split('-').reverse().join('/') : ''}
+                      </span>
+                      <button onClick={() => unarchiveEmployee(selectedEmp)}
+                        style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px 14px', color: C.text, fontSize: '12px', fontFamily: 'inherit', cursor: 'pointer', fontWeight: 600 }}>
+                        ↩️ Réactiver
+                      </button>
+                    </>
+                  ) : selectedEmp.onboarding_completed && (
+                    <button onClick={() => setArchiveFor({ emp: selectedEmp, date: selectedEmp.contract_end_date ? String(selectedEmp.contract_end_date).slice(0, 10) : new Date().toISOString().slice(0, 10) })}
+                      title="Salarié parti : retiré du planning et des listes, dossier conservé"
+                      style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '10px 14px', color: C.text, fontSize: '12px', fontFamily: 'inherit', cursor: 'pointer', fontWeight: 600 }}>
+                      📦 Archiver (départ)
+                    </button>
                   )}
                   <button title="Supprimer cette fiche" onClick={() => deleteEmployee(selectedEmp)}
                     style={{ background: C.redLight, border: '1px solid ' + C.red + '44', borderRadius: '8px', padding: '10px 14px', color: C.red, fontSize: '12px', fontFamily: 'inherit', cursor: 'pointer' }}>
@@ -624,6 +669,25 @@ export default function DossiersRH() {
       )}
 
       {toast && <div style={{ position: 'fixed', bottom: '24px', right: '24px', background: C.card, border: '1px solid ' + (toast.color || C.green), borderRadius: '8px', padding: '10px 16px', fontSize: '12px', color: toast.color || C.green, zIndex: 200, boxShadow: '0 4px 12px ' + C.shadow }}>{toast.msg}</div>}
+      {archiveFor && (
+        <div onClick={() => setArchiveFor(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: '14px', padding: '22px', maxWidth: '440px', width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.25)' }}>
+            <div style={{ fontSize: '16px', fontWeight: 600, color: C.text, marginBottom: '8px' }}>📦 Archiver {archiveFor.emp.first_name} {archiveFor.emp.last_name}</div>
+            <div style={{ fontSize: '12px', color: C.muted, lineHeight: 1.6, marginBottom: '14px' }}>
+              Le salarié disparaît du planning, des listes et des rappels. <strong>Rien n'est effacé</strong> : dossier, documents, heures et registre du personnel sont conservés (5 ans).
+              Il garde l'accès à ses documents (bulletins, attestations) jusqu'à 3 mois après sa sortie. Vous pouvez le réactiver à tout moment (filtre « Archivés »).
+            </div>
+            <label style={{ fontSize: '11px', color: C.muted }}>DATE DE SORTIE
+              <input type="date" value={archiveFor.date} onChange={e => setArchiveFor(a => ({ ...a, date: e.target.value }))}
+                style={{ display: 'block', marginTop: '4px', background: C.bg, border: '1px solid ' + C.border, borderRadius: '8px', padding: '8px 10px', color: C.text, fontSize: '13px', fontFamily: 'inherit' }} />
+            </label>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '18px' }}>
+              <button onClick={() => setArchiveFor(null)} style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '8px', padding: '9px 16px', color: C.muted, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit' }}>Annuler</button>
+              <button onClick={archiveEmployee} style={{ background: C.purple, border: 'none', borderRadius: '8px', padding: '9px 16px', color: '#fff', cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>Archiver</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

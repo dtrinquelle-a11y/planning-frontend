@@ -35,9 +35,9 @@ export default function Confidentialite() {
           <h2 style={h2}>2. Données collectées</h2>
           <ul style={{ paddingLeft: '20px', margin: 0 }}>
             <li style={li}><strong>Identité et contact :</strong> nom, prénom, email, téléphone, adresse, date et lieu de naissance, nationalité.</li>
-            <li style={li}><strong>Données administratives :</strong> numéro de sécurité sociale, coordonnées bancaires (IBAN), mutuelle, taille de vêtement.</li>
-            <li style={li}><strong>Pièces justificatives :</strong> pièce d'identité, RIB, justificatif de domicile, attestation de mutuelle.</li>
-            <li style={li}><strong>Vie professionnelle :</strong> poste, service, type de contrat, horaires planifiés, heures travaillées.</li>
+            <li style={li}><strong>Données administratives :</strong> numéro de sécurité sociale et coordonnées bancaires (IBAN), <strong>chiffrés</strong> (voir § 7), mutuelle, langues parlées, personne à prévenir en cas d'urgence, titre de séjour pour les salariés non européens, taille de vêtement.</li>
+            <li style={li}><strong>Pièces justificatives :</strong> pièce d'identité, RIB, attestation de mutuelle, permis de conduire si le poste le nécessite.</li>
+            <li style={li}><strong>Vie professionnelle :</strong> poste, service, type de contrat, horaires planifiés, heures travaillées, congés et absences (compteur de congés payés estimé), logement de fonction et caution le cas échéant.</li>
             <li style={li}><strong>Pointage :</strong> heures d'arrivée et de départ, et position GPS au seul moment du pointage, afin de vérifier qu'il est effectué sur le site. Aucun suivi de position n'a lieu en dehors du pointage.</li>
             <li style={li}><strong>Compte :</strong> email et mot de passe (le mot de passe est chiffré et n'est jamais visible par l'employeur).</li>
           </ul>

@@ -12,6 +12,7 @@ import NotifCard from './NotifCard';
 import { usePerms } from '../permissions';
 import { fetchConsignes, consignesFor, servicesOf } from '../consignes';
 import { fetchTimeclockEnabled } from '../declarations';
+import { computeCP, fmtJ } from '../cp';
 import useIsMobile, { isMobileNow } from '../useIsMobile';
 
 // Types de documents (memes que l'ecran Documents cote manager), dans l'ordre d'affichage
@@ -84,8 +85,10 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
   const [consActif,setConsActif]=useState(false);
   const [consList,setConsList]=useState([]);
   const [logementCfg,setLogementCfg]=useState(null);
+  const [cpVisible,setCpVisible]=useState(false);
   useEffect(()=>{
     supabase.from('app_settings').select('value').eq('key','logement').maybeSingle().then(({data})=>setLogementCfg(data?.value||null));
+    supabase.from('app_settings').select('value').eq('key','cp_suivi').maybeSingle().then(({data})=>setCpVisible(!!data?.value?.afficher_salarie));
   },[]);
   useEffect(()=>{
     if(!selectedEmp)return;
@@ -300,6 +303,23 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
     </div>
   );
 
+  // Compteur de conges payes (estimation, voir Paie > Suivi des CP) : affiche si le reglage le permet
+  const cp=(cpVisible||isManager)&&tab==='absences'?computeCP(selectedEmp,absences,fmtDate(new Date())):null;
+  const cpCard=cp&&!cp.needsInit&&(
+    <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'18px'}}>
+      <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'12px'}}>MES CONGÉS PAYÉS</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:'10px'}}>
+        {[[fmtJ(cp.n1),'à prendre (N-1)',C.text],[fmtJ(cp.n),'en cours d\u2019acquisition (N)',C.text],[fmtJ(cp.solde),'solde total',C.purple],[cp.aVenir?fmtJ(cp.apresPoses):'—','après les congés déjà posés',C.text]].map(([v,l,col])=>(
+          <div key={l} style={{textAlign:'center',padding:'10px',background:C.bg,border:'1px solid '+C.border,borderRadius:'8px'}}>
+            <div style={{fontSize:'20px',fontWeight:600,color:col}}>{v}</div>
+            <div style={{fontSize:'10px',color:C.muted,marginTop:'2px'}}>{l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{fontSize:'10px',color:C.muted,marginTop:'10px',fontStyle:'italic'}}>Estimation en jours ouvrables, mise à jour automatiquement. Seul votre bulletin de paie fait foi.</div>
+    </div>
+  );
+
   // Accueil mobile : gros boutons, Planning et Mes horaires (ou Pointer) en premier
   if(simple&&tab==='accueil'){
     const big=(icon,label,sub,onClick,color,badge)=>(
@@ -448,6 +468,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
         )}
         {tab==='absences'&&(
           <div>
+            {cpCard}
             {(isManager||can('absences_demande'))&&(<>
             <div style={{fontSize:'11px',color:C.muted,letterSpacing:'0.08em',marginBottom:'14px'}}>DEMANDER UNE ABSENCE</div>
             <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'10px',padding:'16px',marginBottom:'18px'}}>

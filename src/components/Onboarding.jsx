@@ -56,7 +56,8 @@ export default function Onboarding() {
   const [accessName, setAccessName] = useState('');
   const [fields, setFields] = useState([]);
   const [code, setCode] = useState('');
-  const [identity, setIdentity] = useState({ email: '', first_name: '', last_name: '', password: '' });
+  const [identity, setIdentity] = useState({ email: '', first_name: '', last_name: '', password: '', password2: '' });
+  const [showPwd, setShowPwd] = useState(false);
   const [responses, setResponses] = useState({});
   const [files, setFiles] = useState({});
   const [loading, setLoading] = useState(false);
@@ -104,6 +105,7 @@ export default function Onboarding() {
         setError('Tous les champs sont obligatoires.'); return;
       }
       if (identity.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caracteres.'); return; }
+      if (identity.password !== identity.password2) { setError('Les deux mots de passe ne sont pas identiques.'); return; }
       if (!privacyAck) { setError('Veuillez prendre connaissance de la politique de confidentialite.'); return; }
       const email = identity.email.trim().toLowerCase();
 
@@ -313,7 +315,23 @@ export default function Onboarding() {
               </div>
             )}
             <div style={{ marginBottom: '12px' }}><label style={lbl}>EMAIL *</label><input type="email" style={inp} value={identity.email} onChange={e => setIdentity(i => ({ ...i, email: e.target.value }))} placeholder="jean.dupont@email.com" /></div>
-            <div style={{ marginBottom: '16px' }}><label style={lbl}>MOT DE PASSE * (min. 6 caracteres)</label><input type="password" style={inp} value={identity.password} onChange={e => setIdentity(i => ({ ...i, password: e.target.value }))} placeholder="••••••••" /></div>
+            <div style={{ marginBottom: '12px' }}><label style={lbl}>MOT DE PASSE * (min. 6 caracteres)</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showPwd ? 'text' : 'password'} autoComplete="new-password" style={{ ...inp, paddingRight: '44px' }} value={identity.password} onChange={e => setIdentity(i => ({ ...i, password: e.target.value }))} placeholder="••••••••" />
+                <button type="button" onClick={() => setShowPwd(v => !v)} title={showPwd ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '17px', padding: '4px 6px', opacity: showPwd ? 1 : 0.6 }}>
+                  {showPwd ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+            <div style={{ marginBottom: '16px' }}><label style={lbl}>CONFIRMER LE MOT DE PASSE *</label>
+              <input type={showPwd ? 'text' : 'password'} autoComplete="new-password" style={{ ...inp, borderColor: identity.password2 && identity.password2 !== identity.password ? C.red : undefined }} value={identity.password2} onChange={e => setIdentity(i => ({ ...i, password2: e.target.value }))} placeholder="••••••••" />
+              {identity.password2 && (
+                <div style={{ fontSize: '11px', marginTop: '4px', color: identity.password2 === identity.password ? C.green : C.red }}>
+                  {identity.password2 === identity.password ? '✓ Les mots de passe sont identiques' : 'Les mots de passe ne sont pas identiques'}
+                </div>
+              )}
+            </div>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '20px', fontSize: '12px', color: C.muted, lineHeight: 1.5, cursor: 'pointer' }}>
               <input type="checkbox" checked={privacyAck} onChange={e => setPrivacyAck(e.target.checked)} style={{ marginTop: '2px', cursor: 'pointer' }} />
               <span>J'ai pris connaissance de la <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ color: C.purple }}>politique de confidentialité</a> et du traitement de mes données{ACCESS_TOKEN ? '' : " pour mon dossier d'embauche"}. *</span>
@@ -332,6 +350,15 @@ export default function Onboarding() {
           <div>
             <div style={{ background: C.greenLight, border: '1px solid ' + C.green + '44', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: C.green }}>
               ✓ Compte cree ! Completez maintenant votre dossier d'embauche.
+            </div>
+            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', fontSize: '12px', color: C.text, lineHeight: 1.6, display: 'flex', gap: '10px' }}>
+              <span style={{ fontSize: '18px' }}>🔒</span>
+              <span>
+                <strong>Vos données sont protégées.</strong> Votre numéro de sécurité sociale et votre IBAN sont <strong>chiffrés</strong> dès leur enregistrement :
+                ils restent illisibles même en cas de copie de la base, n'apparaissent que masqués (•••• 4512) et seules les personnes chargées de la paie et des dossiers RH peuvent les afficher, chaque consultation étant enregistrée.
+                Vos pièces justificatives ne sont visibles que par vous et la direction. Votre IBAN est effacé 6 mois après votre départ.{' '}
+                <a href="/confidentialite" target="_blank" rel="noreferrer" style={{ color: C.purple }}>En savoir plus</a>
+              </span>
             </div>
             <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', padding: '24px', marginBottom: '16px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
               <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '20px', color: C.text }}>Informations personnelles</div>

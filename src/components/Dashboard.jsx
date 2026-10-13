@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { useTheme } from '../ThemeContext';
 import CampLogo from '../CampLogo';
 import { API } from '../config';
+import StatsServices from './StatsServices';
 import ActiviteJour from './ActiviteJour';
 import NotifCard from './NotifCard';
 
@@ -109,7 +110,7 @@ function VueEnsemble({ tab, setTab, onNavigate }) {
 
       {/* Sous-menu */}
       <div style={{ display: 'flex', gap: '4px', padding: '0 32px', background: C.card, borderBottom: '1px solid ' + C.border }}>
-        {[{ id: 'ensemble', label: "Vue d'ensemble" }, { id: 'jour', label: '⚡ Activité du jour' }].map(t => (
+        {[{ id: 'ensemble', label: "Vue d'ensemble" }, { id: 'jour', label: '⚡ Activité du jour' }, { id: 'services', label: '📊 Services et masse salariale' }].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{ padding: '10px 14px', background: 'none', border: 'none', borderBottom: '2px solid ' + (tab === t.id ? C.purple : 'transparent'), color: tab === t.id ? C.purple : C.muted, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', fontWeight: tab === t.id ? 600 : 500 }}>
             {t.label}
@@ -117,7 +118,7 @@ function VueEnsemble({ tab, setTab, onNavigate }) {
         ))}
       </div>
 
-      {tab === 'jour' ? <div style={s.main}><NotifCard /><ActiviteJour onNavigate={onNavigate} /></div> : (
+      {tab === 'services' ? <div style={s.main}><StatsServices /></div> : tab === 'jour' ? <div style={s.main}><NotifCard /><ActiviteJour onNavigate={onNavigate} /></div> : (
       <div style={s.main}>
         <div style={{ marginTop: '16px' }}><NotifCard /></div>
         <div style={s.sectionTitle}>Vue d'ensemble</div>

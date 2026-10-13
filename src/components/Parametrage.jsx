@@ -10,6 +10,7 @@ import ConsignesReglages from './ConsignesReglages';
 import { usePerms } from '../permissions';
 import GrilleCcHpa from './GrilleCcHpa';
 import { API } from '../config';
+import { CpSuiviToggle } from './SuiviCP';
 
 
 const SHIFT_COLORS = {
@@ -303,6 +304,9 @@ export default function Parametrage() {
                 return (
                   <div>
                     <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px', color: C.text }}>Congés payés</div>
+                    <div style={{ fontSize: '12px', color: C.muted, margin: '12px 0 8px', fontWeight: 600 }}>Compteur des salariés</div>
+                    <CpSuiviToggle />
+                    <div style={{ fontSize: '12px', color: C.muted, margin: '0 0 6px', fontWeight: 600 }}>Périodes sans congés payés</div>
                     <div style={{ fontSize: '12px', color: C.muted, marginBottom: '24px', lineHeight: 1.6 }}>
                       Périodes pendant lesquelles les salariés ne peuvent pas demander de congés payés (haute saison, ouverture…).
                       Elles sont affichées dans leur formulaire de demande. Vous pouvez toujours accorder vous-même un congé sur ces périodes.

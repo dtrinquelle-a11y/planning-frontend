@@ -71,12 +71,19 @@ export default function Confidentialite() {
             <li style={li}>Données de pointage et décompte des heures : 1 an, ou 5 ans lorsqu'elles servent au calcul de la paie.</li>
             <li style={li}>Compte d'accès à l'application : supprimé au départ du salarié.</li>
             <li style={li}>Dossier d'un candidat non embauché : supprimé dès que la décision de ne pas embaucher est prise.</li>
+            <li style={li}>Coordonnées bancaires (IBAN) : effacées automatiquement 6 mois après la fin du contrat.</li>
           </ul>
 
           <h2 style={h2}>7. Sécurité</h2>
           <p style={p}>
             Les échanges sont chiffrés (HTTPS). L'accès aux données est protégé par identifiant et mot de passe,
             et cloisonné : un salarié ne peut consulter que ses propres données et documents.
+          </p>
+          <p style={p}>
+            Le <strong>numéro de sécurité sociale</strong> et l'<strong>IBAN</strong> sont en plus <strong>chiffrés</strong> dans la base de données :
+            même une copie de la base ne permet pas de les lire. Dans l'application, ils apparaissent masqués (par exemple « •••• 4512 »)
+            et seules les personnes chargées des dossiers RH, des contrats ou de la paie peuvent les afficher en clair.
+            Chaque affichage est enregistré (qui, quand, pourquoi) dans un journal consultable par la direction.
           </p>
 
           <h2 style={h2}>8. Vos droits</h2>

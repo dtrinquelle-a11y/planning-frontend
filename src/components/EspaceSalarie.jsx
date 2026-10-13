@@ -10,6 +10,7 @@ import DocsASigner from './DocsASigner';
 import MesHoraires from './MesHoraires';
 import NotifCard from './NotifCard';
 import { usePerms } from '../permissions';
+import { fetchConsignes, consignesFor, servicesOf } from '../consignes';
 import { fetchTimeclockEnabled } from '../declarations';
 import useIsMobile, { isMobileNow } from '../useIsMobile';
 
@@ -79,6 +80,13 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
       .then(({data})=>setRecupMin((data||[]).reduce((n,s)=>{const[a,b]=String(s.start_time).slice(0,5).split(':').map(Number);const[c,d]=String(s.end_time).slice(0,5).split(':').map(Number);let m=c*60+d-a*60-b;if(m<=0)m+=1440;return n+Math.max(0,m-(parseInt(s.break_minutes,10)||0));},0)));
   },[tab,selectedEmp]);
   const [weekAbsences,setWeekAbsences]=useState([]); // absences acceptees ou en attente de la semaine affichee
+  // Consignes du jour par service (Parametrage > Consignes) et caution du logement (Parametrage > Logement)
+  const [consActif,setConsActif]=useState(false);
+  const [consList,setConsList]=useState([]);
+  const [logementCfg,setLogementCfg]=useState(null);
+  useEffect(()=>{
+    supabase.from('app_settings').select('value').eq('key','logement').maybeSingle().then(({data})=>setLogementCfg(data?.value||null));
+  },[]);
   useEffect(()=>{
     if(!selectedEmp)return;
     supabase.from('absence_requests').select('*').eq('employee_id',selectedEmp.id).in('status',['acceptee','en_attente'])
@@ -96,6 +104,11 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
     return()=>window.removeEventListener('badges-refresh',refresh);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab,isManager,ownEmployee?.id]);
+  useEffect(()=>{
+    const from=getMonday(weekOffset);const to=addDays(from,6);const today=fmtDate(new Date());
+    const lo=fmtDate(from)<today?fmtDate(from):today, hi=fmtDate(to)>today?fmtDate(to):today;
+    fetchConsignes(lo,hi).then(r=>{setConsActif(r.actif);setConsList(r.list);}).catch(()=>{});
+  },[weekOffset]);
   const [exportingPDF,setExportingPDF]=useState(false);
   const planningRef = useRef(null);
   const mon=getMonday(weekOffset);
@@ -268,6 +281,25 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
     </div>
   );
 
+  const todayCons=consActif?consignesFor(consList,fmtDate(new Date()),servicesOf(selectedEmp)):[];
+  const consigneCard=todayCons.length>0&&(
+    <div style={{background:C.amberLight,border:'1px solid '+C.amber+'55',borderRadius:simple?'14px':'10px',padding:simple?'14px 16px':'10px 14px',marginBottom:'14px'}}>
+      <div style={{fontSize:simple?'14px':'12px',fontWeight:700,color:C.amber,marginBottom:'4px'}}>📝 Consigne du jour</div>
+      {todayCons.map(c=><div key={c.id} style={{fontSize:simple?'14px':'13px',color:C.text,lineHeight:1.5}}>{c.service!=='Tous'&&servicesOf(selectedEmp).length>1?<strong>{c.service} : </strong>:null}{c.texte}</div>)}
+    </div>
+  );
+  // Salarie loge : caution a regler tant que le responsable ne l'a pas notee comme recue
+  const cautionCard=!isManager&&selectedEmp.logement&&!selectedEmp.caution_recue_at&&logementCfg?.caution_lien&&(
+    <div style={{background:C.card,border:'1px solid '+C.purple+'55',borderRadius:simple?'14px':'10px',padding:simple?'14px 16px':'12px 14px',marginBottom:'14px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
+      <span style={{fontSize:'24px'}}>🏠</span>
+      <div style={{flex:1,minWidth:'180px'}}>
+        <div style={{fontSize:'14px',fontWeight:700,color:C.text}}>Caution du logement{logementCfg.caution_montant?' : '+String(logementCfg.caution_montant).replace('.',',')+' €':''}</div>
+        {logementCfg.caution_texte&&<div style={{fontSize:'12px',color:C.muted}}>{logementCfg.caution_texte}</div>}
+      </div>
+      <a href={logementCfg.caution_lien} target="_blank" rel="noreferrer" style={{background:C.purple,color:'#fff',borderRadius:'10px',padding:'10px 16px',fontSize:'14px',fontWeight:700,textDecoration:'none'}}>Payer la caution</a>
+    </div>
+  );
+
   // Accueil mobile : gros boutons, Planning et Mes horaires (ou Pointer) en premier
   if(simple&&tab==='accueil'){
     const big=(icon,label,sub,onClick,color,badge)=>(
@@ -290,6 +322,8 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
         <div style={{fontSize:'22px',fontWeight:700,color:C.text}}>Bonjour {selectedEmp.first_name} 👋</div>
         <div style={{fontSize:'13px',color:C.muted,marginBottom:'16px',textTransform:'capitalize'}}>{today}</div>
         {nextShiftCard}
+        {consigneCard}
+        {cautionCard}
         <NotifCard big/>
         {big('📅','Mon planning',heuresPlanifiees.toFixed(1)+' h prévues cette semaine',()=>setTab('planning'),'#5B4FD6',0)}
         {declarative
@@ -344,6 +378,8 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
 
       <div style={{padding:simple?'14px 14px':'16px 20px',maxWidth:'700px',margin:'0 auto'}}>
         {tab==='planning'&&!isManager&&!simple&&<NotifCard/>}
+        {tab==='planning'&&!simple&&consigneCard}
+        {tab==='planning'&&!simple&&cautionCard}
         {tab==='planning'&&!isManager&&tabBadges.signer>0&&(
           <div onClick={()=>setTab('signer')} style={{cursor:'pointer',background:C.redLight,border:'1px solid '+C.red+'44',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'12px',color:C.red,fontWeight:600}}>
             ✍️ {tabBadges.signer} document{tabBadges.signer>1?'s':''} obligatoire{tabBadges.signer>1?'s':''} à lire et signer →
@@ -373,9 +409,9 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
 
             <div ref={planningRef} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
               {DAYS.map((d,di)=>{
-                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());const dayAbs=weekAbsences.filter(a=>absenceCovers(a,fmtDate(day))).sort((x,y)=>(x.status==='acceptee'?0:1)-(y.status==='acceptee'?0:1));
+                const day=addDays(mon,di);const dayShifts=getShiftsForDay(di);const isToday=fmtDate(day)===fmtDate(new Date());const dayAbs=weekAbsences.filter(a=>absenceCovers(a,fmtDate(day))).sort((x,y)=>(x.status==='acceptee'?0:1)-(y.status==='acceptee'?0:1));const dayCons=consActif?consignesFor(consList,fmtDate(day),servicesOf(selectedEmp)):[];
                 return(
-                  <div key={di} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 14px',background:isToday?C.purpleLight:C.card,border:'1px solid '+(isToday?C.purple+'44':C.border),borderRadius:'8px',boxShadow:C.shadow+' 0 1px 4px'}}>
+                  <div key={di} style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'12px',padding:'10px 14px',background:isToday?C.purpleLight:C.card,border:'1px solid '+(isToday?C.purple+'44':C.border),borderRadius:'8px',boxShadow:C.shadow+' 0 1px 4px'}}>
                     <div style={{minWidth:'70px'}}>
                       <div style={{fontSize:'11px',color:isToday?C.purple:C.muted}}>{d}</div>
                       <div style={{fontSize:'16px',fontWeight:600,color:isToday?C.purple:C.text}}>{day.getDate()}</div>
@@ -403,6 +439,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
                     ):(
                       dayAbs.length>0?<div style={{flex:1}}/>:<div style={{flex:1,fontSize:'12px',color:C.border}}>—</div>
                     )}
+                    {dayCons.length>0&&<div style={{flexBasis:'100%',fontSize:'12px',color:C.amber,lineHeight:1.5}}>📝 {dayCons.map(c=>c.texte).join(' · ')}</div>}
                   </div>
                 );
               })}

@@ -338,7 +338,7 @@ export default function Onboarding() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 {textFields.map(field => (
                   <div key={field.id} style={{ gridColumn: field.field_type === 'multiselect' || field.label.toLowerCase().includes('adresse') || field.label.length > 30 || fieldOptions(field).some(o => o.length > 25) ? 'span 2' : 'span 1' }}>
-                    <label style={lbl}>{field.label.toUpperCase()} {field.required ? '*' : ''}</label>
+                    <label style={lbl}>{field.label.toUpperCase()} {field.required ? '*' : ''}{['Numero de securite sociale', 'IBAN'].includes(field.label) && <span style={{ color: '#16A34A', letterSpacing: 0, marginLeft: '6px' }} title="Cette information est chiffrée : elle n'est lisible que par la direction RH, et chaque consultation est enregistrée.">🔒 chiffré</span>}</label>
                     {field.field_type === 'multiselect' ? (
                       // Choix multiple : cases a cocher, valeur enregistree "A, B, C"
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>

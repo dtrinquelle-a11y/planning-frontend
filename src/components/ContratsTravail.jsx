@@ -150,6 +150,13 @@ export default function ContratsTravail() {
     return { values: v, missing, known, e, has, salaryField };
   }
 
+  // Logement : nombre de pieces et caution recue, enregistres tout de suite dans la fiche
+  async function saveLogement(emp, patch) {
+    const { data, error } = await supabase.from('employees').update(patch).eq('id', emp.id).select().single();
+    if (error) { showToast('Erreur : ' + error.message, C.red); return; }
+    setEmps(prev => prev.map(x => x.id === emp.id ? data : x));
+  }
+
   const setEdit = (empId, k, val) => setEdits(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), [k]: val } }));
 
   async function generate(emp) {
@@ -162,6 +169,13 @@ export default function ContratsTravail() {
       const classifMissing = r.has('coefficient') && !r.e.coefficient ? ['Coefficient'] : [];
       const all = [...r.missing.map(labelOf), ...classifMissing];
       if (all.length && !window.confirm(all.length + ' champ(s) vide(s) : ' + all.join(', ') + '.\n\nGénérer quand même le contrat ?')) return;
+      // N° de securite sociale chiffre : dechiffre pour le contrat (consultation journalisee)
+      const nssFields = entry.info.fields.filter(k => resolveKey(k) === 'numero_secu' && String(r.values[k] || '').startsWith('•'));
+      if (nssFields.length) {
+        const { data: clear, error: re } = await supabase.rpc('reveal_employee_nss', { p_employee: emp.id, p_reason: 'Contrat de travail' });
+        if (re) throw re;
+        nssFields.forEach(k => { r.values[k] = clear || ''; });
+      }
       const blob = renderContract(entry.buffer, r.values);
       const safe = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
       downloadBlob(blob, 'contrat-' + safe(emp.last_name) + '-' + safe(emp.first_name) + '.docx');
@@ -372,6 +386,21 @@ export default function ContratsTravail() {
                       {shownSalary ? 'En lettres : ' + (r.salaryField && r.salaryField in own ? montantEnLettres(decimal(own[r.salaryField])) : r.known.salaire_lettres) + (parseFloat(e.contract_hours) && parseFloat(e.contract_hours) !== 35 ? ' (pour ' + e.contract_hours + ' h / semaine)' : '') : "Choisissez l'emploi puis le coefficient : le salaire minimum conventionnel est calculé."}
                       {e.logement && !r.has('logement') && <span style={{ color: C.amber }}> · Ajoutez le champ «LOGEMENT» dans le modèle pour faire figurer le paragraphe du logement.</span>}
                     </div>
+                    {e.logement && (
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginTop: '8px', padding: '8px 10px', background: C.bg, borderRadius: '8px', fontSize: '12px', color: C.text }}>
+                        <span>🏠 Logement :</span>
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>pièces
+                          <select value={emp.logement_pieces || 1} onChange={ev => saveLogement(emp, { logement_pieces: parseInt(ev.target.value, 10) })} style={{ ...inp, width: '60px', marginTop: 0 }}>
+                            {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </label>
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!emp.caution_recue_at} onChange={ev => saveLogement(emp, { caution_recue_at: ev.target.checked ? new Date().toISOString() : null })} style={{ accentColor: C.green }} />
+                          Caution reçue{emp.caution_recue_at ? ' le ' + fr(emp.caution_recue_at) : ''}
+                        </label>
+                        {!emp.caution_recue_at && <span style={{ color: C.muted }}>Le salarié voit le lien de paiement dans son espace.</span>}
+                      </div>
+                    )}
 
                     {/* Valeurs par defaut, modifiables */}
                     {defaultKeys.length > 0 && (

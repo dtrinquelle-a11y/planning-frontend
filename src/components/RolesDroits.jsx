@@ -16,6 +16,8 @@ export default function RolesDroits() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [filter, setFilter] = useState('');
+  const [log, setLog] = useState(null); // journal des consultations des donnees sensibles
+  const [names, setNames] = useState({});
 
   async function load() {
     const [s, a] = await Promise.all([
@@ -26,6 +28,34 @@ export default function RolesDroits() {
     if (a.error) setMsg({ err: true, text: a.error.message }); else setAccounts(a.data || []);
   }
   useEffect(() => { load(); }, []);
+
+  async function loadLog() {
+    const [l, e] = await Promise.all([
+      supabase.from('sensitive_access_log').select('*').order('at', { ascending: false }).limit(50),
+      supabase.from('employees').select('id, first_name, last_name'),
+    ]);
+    setLog(l.data || []);
+    setNames(Object.fromEntries((e.data || []).map(x => [x.id, x.first_name + ' ' + x.last_name])));
+  }
+
+  // Copie de secours de la cle de chiffrement : indispensable pour relire les donnees apres une restauration
+  async function downloadKey() {
+    if (!window.confirm('Télécharger la clé de secours ?\n\nRangez-la dans votre gestionnaire de mots de passe, jamais dans le Drive avec les sauvegardes.')) return;
+    const { data, error } = await supabase.rpc('get_encryption_key');
+    if (error) { setMsg({ err: true, text: error.message }); return; }
+    const txt = [
+      'Planning HPA - cle de chiffrement des donnees sensibles',
+      'Generee le ' + new Date().toLocaleDateString('fr-FR'),
+      '',
+      data,
+      '',
+      'A conserver dans un gestionnaire de mots de passe, SEPAREMENT des sauvegardes.',
+      "Restauration (voir PLAN_DE_REPRISE.md) : INSERT INTO public.server_secrets (key, value) VALUES ('cle_donnees_sensibles', '<cle>') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;",
+    ].join('\r\n') + '\r\n';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/plain' })); a.download = 'cle-secours-planning-hpa.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+    loadLog();
+  }
 
   const on = (role, key) => cfg[role]?.[key] !== false;
   function toggle(role, key) {
@@ -128,6 +158,31 @@ export default function RolesDroits() {
             </div>
           ))}
           {!list.length && <div style={{ padding: '16px', fontSize: '12px', color: C.muted, textAlign: 'center' }}>Aucun compte.</div>}
+        </div>
+      )}
+
+      {/* Donnees sensibles */}
+      <div style={{ marginTop: '30px', fontSize: '14px', fontWeight: 600, color: C.text }}>🔒 Données sensibles</div>
+      <div style={{ fontSize: '12px', color: C.muted, margin: '4px 0 12px', lineHeight: 1.6 }}>
+        Le n° de sécurité sociale et l'IBAN sont chiffrés dans la base : ils apparaissent masqués (•••• 4512) et ne sont lisibles en clair qu'avec un droit RH, contrats ou paie.
+        Chaque affichage est enregistré ci-dessous. L'IBAN est effacé automatiquement 6 mois après la fin du contrat.
+      </div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <button onClick={downloadKey} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '8px 14px', color: C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>🔑 Télécharger la clé de secours</button>
+        <button onClick={loadLog} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '8px', padding: '8px 14px', color: C.text, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', fontWeight: 600 }}>📜 {log ? 'Actualiser le journal' : 'Voir le journal des consultations'}</button>
+      </div>
+      {log && (
+        <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '12px', overflow: 'hidden' }}>
+          {log.length === 0 ? <div style={{ padding: '14px', fontSize: '12px', color: C.muted }}>Aucune consultation enregistrée.</div> : log.map((l, i) => {
+            const who = (accounts || []).find(a => a.user_id === l.user_id);
+            return (
+              <div key={l.id} style={{ display: 'flex', gap: '12px', padding: '7px 14px', borderTop: i ? '1px solid ' + C.border + '88' : 'none', fontSize: '12px', flexWrap: 'wrap' }}>
+                <span style={{ width: '120px', color: C.muted }}>{new Date(l.at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                <span style={{ width: '170px', color: C.text, fontWeight: 600 }}>{who ? (who.first_name ? who.first_name + ' ' + who.last_name : who.email) : 'Compte supprimé'}</span>
+                <span style={{ flex: 1, color: C.text }}>{l.field === 'cle' ? 'Clé de secours' : l.field === 'numero_secu' ? 'N° de sécurité sociale' : l.field}{l.employee_id ? ' de ' + (names[l.employee_id] || 'salarié supprimé') : ''}{l.reason ? ' · ' + l.reason : ''}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -40,7 +40,14 @@ export default function BulletinsGroupes({ onClose, onDone, inline }) {
       const buf = await file.arrayBuffer();
       const [pages, pdf] = await Promise.all([readPages(buf), loadPdf(buf)]);
       pdfRef.current = pdf;
-      const a = assignPages(pages, emps);
+      // N° de securite sociale trouves dans le PDF -> salaries (la base compare sans renvoyer les numeros)
+      const candidates = [...new Set(pages.flatMap(p => p.nss))];
+      const nssMap = {};
+      if (candidates.length) {
+        const { data } = await supabase.rpc('match_nss', { p_candidates: candidates });
+        (data || []).forEach(m => { nssMap[m.candidate] = m.employee_id; });
+      }
+      const a = assignPages(pages, emps, nssMap);
       setAssign(a);
       if (pages.every(p => p.empty)) setMsg({ err: true, text: 'Ce PDF ne contient pas de texte lisible (document scanné) : attribuez les pages à la main ci-dessous.' });
     } catch (err) { setMsg({ err: true, text: 'Lecture impossible : ' + err.message }); }

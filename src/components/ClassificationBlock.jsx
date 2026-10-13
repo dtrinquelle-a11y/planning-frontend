@@ -95,6 +95,19 @@ export default function ClassificationBlock({ form, setForm, cfg }) {
         </label>
       </div>
       {form.logement && (
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginTop: '10px' }}>
+          <label style={{ ...lbl, display: 'flex', gap: '6px', alignItems: 'center' }}>PIÈCES
+            <select style={{ ...inp, width: '70px', marginTop: 0 }} value={form.logement_pieces || 1} onChange={e => setForm(f => ({ ...f, logement_pieces: e.target.value }))}>
+              {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <span style={{ color: C.muted }}>(chambre = 1 ; sert au calcul de l'avantage en nature)</span>
+          </label>
+          <label style={{ ...lbl, display: 'flex', gap: '6px', alignItems: 'center', color: C.text, fontSize: '12px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!form.caution_recue} onChange={e => setForm(f => ({ ...f, caution_recue: e.target.checked }))} style={{ accentColor: C.green }} /> Caution reçue
+          </label>
+        </div>
+      )}
+      {form.logement && (
         <label style={{ ...lbl, marginTop: '10px' }}>CONDITIONS DU LOGEMENT (reprises dans le contrat)
           <textarea style={{ ...inp, minHeight: '50px', resize: 'vertical' }} value={form.logement_details || ''} onChange={e => setForm(f => ({ ...f, logement_details: e.target.value }))}
             placeholder="Ex : mobil-home partagé sur le camping, avantage en nature de … € / mois, à libérer à la fin du contrat" />

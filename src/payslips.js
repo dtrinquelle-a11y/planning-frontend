@@ -15,17 +15,19 @@ export async function readPages(arrayBuffer) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const raw = content.items.map(it => it.str).join(' ');
-    pages.push({ text: norm(raw), digits: raw.replace(/\D/g, ''), empty: !raw.trim() });
+    // N° de securite sociale ecrits sur la page (avec ou sans espaces) -> 13 chiffres
+    const nss = [...raw.matchAll(/\b[12]\s?\d{2}\s?\d{2}\s?(?:\d{2}|2A|2B)\s?\d{3}\s?\d{3}/g)].map(m => m[0].replace(/\s/g, '').replace(/2A|2B/, '20'));
+    pages.push({ text: norm(raw), nss: [...new Set(nss)], empty: !raw.trim() });
   }
   return pages;
 }
 
 // Salarie reconnu sur une page : numero de securite sociale (le plus sur), sinon nom + prenom
-function matchPage(page, emps) {
+// nssMap : n° SS (13 chiffres) -> id du salarie, fourni par la base (les numeros ne sont pas stockes en clair)
+function matchPage(page, emps, nssMap) {
   const found = [];
   for (const e of emps) {
-    const nss = String(e.nss || '').replace(/\D/g, '').slice(0, 13);
-    if (nss.length === 13 && page.digits.includes(nss)) { found.push({ e, score: 3 }); continue; }
+    if (page.nss.some(n => nssMap[n] === e.id)) { found.push({ e, score: 3 }); continue; }
     const last = norm(e.last_name), first = norm(e.first_name);
     if (last.trim().length < 2 || first.trim().length < 2) continue;
     if (page.text.includes(last) && page.text.includes(first)) {
@@ -40,10 +42,10 @@ function matchPage(page, emps) {
 }
 
 // Attribution page par page : une page sans nom reconnu est la suite du bulletin precedent (bulletin sur 2 pages)
-export function assignPages(pages, emps) {
+export function assignPages(pages, emps, nssMap = {}) {
   let prev = null;
   return pages.map((p, i) => {
-    const m = matchPage(p, emps);
+    const m = matchPage(p, emps, nssMap);
     if (m) { prev = m.employee.id; return { page: i, employeeId: m.employee.id, how: m.ambiguous ? 'ambigu' : 'reconnu' }; }
     if (prev) return { page: i, employeeId: prev, how: 'suite' };
     return { page: i, employeeId: '', how: 'inconnu' };

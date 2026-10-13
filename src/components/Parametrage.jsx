@@ -5,6 +5,8 @@ import Sauvegardes from './Sauvegardes';
 import FermeturesEntreprise from './FermeturesEntreprise';
 import ModelesContrats from './ModelesContrats';
 import RolesDroits from './RolesDroits';
+import LogementReglages from './LogementReglages';
+import ConsignesReglages from './ConsignesReglages';
 import { usePerms } from '../permissions';
 import GrilleCcHpa from './GrilleCcHpa';
 import { API } from '../config';
@@ -67,9 +69,11 @@ export default function Parametrage() {
     { id: 'pointeuse', label: '📷 Pointeuse', icon: '📷' },
     { id: 'conges', label: '🏖️ Congés payés', icon: '🏖️' },
     { id: 'contrats', label: '📄 Contrats', icon: '📄' },
+    { id: 'logement', label: '🏠 Logement', icon: '🏠' },
+    { id: 'consignes', label: '📝 Consignes', icon: '📝' },
     { id: 'sauvegardes', label: '💾 Sauvegardes', icon: '💾' },
     { id: 'roles', label: '👥 Rôles et droits', icon: '👥' },
-  ].filter(x => x.id === 'roles' ? isAdmin : x.id === 'sauvegardes' ? can('sauvegardes') : x.id === 'contrats' ? can('contrats') : can('parametrage'));
+  ].filter(x => x.id === 'roles' ? isAdmin : x.id === 'sauvegardes' ? can('sauvegardes') : x.id === 'contrats' ? can('contrats') : x.id === 'consignes' ? can('planning_modifier') : can('parametrage'));
   // Section affichee : celle choisie si elle est autorisee, sinon la premiere autorisee
   const sec = sections.some(x => x.id === section) ? section : sections[0]?.id;
 
@@ -287,6 +291,8 @@ export default function Parametrage() {
               {sec === 'sauvegardes' && <Sauvegardes />}
               {sec === 'contrats' && <ModelesContrats />}
               {sec === 'roles' && <RolesDroits />}
+              {sec === 'logement' && <LogementReglages />}
+              {sec === 'consignes' && <ConsignesReglages />}
 
               {/* CONGES PAYES : periodes ou les salaries ne peuvent pas poser de CP */}
               {sec === 'conges' && (() => {

@@ -26,6 +26,7 @@ function contractFormFrom(emp) {
     emploi_repere: emp.emploi_repere || '', categorie: emp.categorie || '', coefficient: emp.coefficient ?? '',
     salaire_horaire: emp.salaire_horaire != null ? String(emp.salaire_horaire).replace('.', ',') : '',
     periode_essai: emp.periode_essai || '', taches: emp.taches || '', logement: !!emp.logement, logement_details: emp.logement_details || '',
+    logement_pieces: emp.logement_pieces || 1, caution_recue: !!emp.caution_recue_at,
   };
 }
 function initials(f,l){return(f?.[0]||'')+(l?.[0]||'');}
@@ -48,6 +49,13 @@ export default function DossiersRH() {
   const [accountIds, setAccountIds] = useState(new Set()); // salaries ayant deja un compte
   const [accessLink, setAccessLink] = useState(null); // { empId, url }
   const { can } = usePerms();
+  const [revealed, setRevealed] = useState({}); // reponse id -> valeur en clair (donnees sensibles chiffrees)
+  async function reveal(r) {
+    if (revealed[r.id]) { setRevealed(v => { const n = { ...v }; delete n[r.id]; return n; }); return; }
+    const { data, error } = await supabase.rpc('reveal_response', { p_response: r.id });
+    if (error) { showToast('Accès refusé : ' + error.message, C.red); return; }
+    setRevealed(v => ({ ...v, [r.id]: data || '' }));
+  }
   const [rhTabChoice, setRhTab] = useState('dossiers'); // sous-sections : dossiers / contrats de travail
   const rhTabs = [{ id: 'dossiers', label: 'Dossiers des salariés' }, { id: 'contrats', label: '📄 Contrats de travail' }].filter(t => can(t.id === 'dossiers' ? 'dossiers_rh' : 'contrats'));
   const rhTab = rhTabs.some(t => t.id === rhTabChoice) ? rhTabChoice : rhTabs[0]?.id;
@@ -120,6 +128,8 @@ export default function DossiersRH() {
         taches: contractForm.taches.trim() || null,
         logement: !!contractForm.logement,
         logement_details: contractForm.logement ? (contractForm.logement_details.trim() || null) : null,
+        logement_pieces: Math.max(1, parseInt(contractForm.logement_pieces, 10) || 1),
+        caution_recue_at: contractForm.logement && contractForm.caution_recue ? (selectedEmp.caution_recue_at || new Date().toISOString()) : null,
       };
       const { data, error } = await supabase.from('employees').update(patch).eq('id', selectedEmp.id).select().single();
       if (error) throw error;
@@ -576,7 +586,15 @@ export default function DossiersRH() {
                   ) : responses.filter(r => !['file','signature'].includes(r.onboarding_fields?.field_type)).map(r => (
                     <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid ' + C.border + '66', fontSize: '12px' }}>
                       <span style={{ color: C.muted }}>{r.onboarding_fields?.label}</span>
-                      <span style={{ color: C.text, fontWeight: 500, textAlign: 'right', maxWidth: '60%', wordBreak: 'break-word' }}>{r.value}</span>
+                      <span style={{ color: C.text, fontWeight: 500, textAlign: 'right', maxWidth: '60%', wordBreak: 'break-word' }}>
+                        {String(r.value || '').startsWith('•') ? (
+                          <>🔒 {revealed[r.id] ?? r.value}{' '}
+                            <button onClick={() => reveal(r)} title="Donnée chiffrée : chaque affichage est enregistré dans le journal"
+                              style={{ background: 'none', border: '1px solid ' + C.border, borderRadius: '6px', padding: '1px 7px', color: C.purple, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', marginLeft: '4px' }}>
+                              {revealed[r.id] !== undefined ? 'Masquer' : 'Afficher'}
+                            </button></>
+                        ) : r.value}
+                      </span>
                     </div>
                   ))}
                 </div>

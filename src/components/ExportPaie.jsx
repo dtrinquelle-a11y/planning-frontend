@@ -46,6 +46,8 @@ const COLUMNS = [
   ['Conges payes (jours)', r => r.abs.conge_paye], ['Arret maladie (jours)', r => r.abs.maladie],
   ['Sans solde (jours)', r => r.abs.sans_solde], ['Repos / autres absences (jours)', r => r.abs.autres],
   ['Retards', r => r.retards], ['Cumul modulation (h)', r => num(r.modulation_cumul)],
+  ['Avantage en nature logement (EUR)', r => num(r.avantage_logement)],
+  ['Logement : detail', r => r.logement ? r.logement.pieces + ' piece(s), forfait ' + num(r.logement.forfait_mensuel) + ' EUR' + (r.logement.semaines ? ', ' + r.logement.semaines + ' semaine(s) sur ' + r.logement.jours + ' jour(s)' : ', mois complet') : ''],
 ];
 
 export default function ExportPaie() {
@@ -207,7 +209,7 @@ export default function ExportPaie() {
                   <th style={th}>HS payées</th><th style={th}>HS reportées</th><th style={th}>Récup</th>
                   <th style={th}>Dim.</th><th style={th}>Fériés</th>
                   <th style={th}>CP</th><th style={th}>Maladie</th><th style={th}>Ss solde</th><th style={th}>Autres abs.</th>
-                  <th style={th}>Retards</th><th style={th}>Modulation</th>
+                  <th style={th}>Retards</th><th style={th}>Modulation</th><th style={th} title="Avantage en nature logement (barème Urssaf)">Logement</th>
                 </tr>
               </thead>
               <tbody>
@@ -242,6 +244,7 @@ export default function ExportPaie() {
                     <td style={td}>{r.abs.autres || '—'}</td>
                     <td style={td}>{r.retards || '—'}</td>
                     <td style={td}>{fmtH(r.modulation_cumul)}</td>
+                    <td style={td} title={r.logement ? r.logement.pieces + ' pièce(s) · forfait ' + r.logement.forfait_mensuel + ' € / mois' + (r.logement.semaines ? ' · ' + r.logement.semaines + ' semaine(s) commencée(s)' : '') : ''}>{r.avantage_logement != null ? r.avantage_logement.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) + ' €' : '—'}</td>
                   </tr>
                 ))}
               </tbody>

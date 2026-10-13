@@ -8,6 +8,7 @@ import { absenceType, absenceCovers } from '../absences';
 import { checkEmployeeWeek } from '../legalChecks';
 import { API } from '../config';
 import { usePerms } from '../permissions';
+import { fetchConsignes, consignesFor, SERVICES as CONS_SERVICES } from '../consignes';
 
 const SERVICES = ['Accueil', 'Housekeeping', 'Technique', 'Restauration', 'Animation', 'Managers'];
 const ALL = 'Tous'; // vue de tous les services a la fois
@@ -93,6 +94,7 @@ export default function Planning() {
   const [dragEmpIdx, setDragEmpIdx] = useState(null);
   const [dragShift, setDragShift] = useState(null); // creneau en cours de glisser-deposer
   const [dropKey, setDropKey] = useState(null);     // case survolee pendant le glisser
+  const [cons, setCons] = useState({ actif: false, list: [] }); // consignes du jour (Parametrage > Consignes)
   const [copyModal, setCopyModal] = useState(false);
   const [copyEmpId, setCopyEmpId] = useState('');
   const [copyTargetOffset, setCopyTargetOffset] = useState(1);
@@ -115,6 +117,7 @@ export default function Planning() {
     loadAbsences();
     loadContextShifts();
     loadMonthlySummary();
+    fetchConsignes(fmtDate(mon), fmtDate(addDays(mon, 6))).then(setCons).catch(() => {});
   }, [weekOffset, service]); // eslint-disable-line
 
   async function loadDbShifts() {
@@ -581,6 +584,7 @@ export default function Planning() {
               {DAYS.map((d,i)=>{const day=addDays(mon,i);const isToday=day.getTime()===today.getTime();return(
                 <div key={i} style={{padding:'8px 4px',textAlign:'center',fontSize:'10px',color:isToday?'#6C5FCD':'#6B7280',borderRight:i<6?'1px solid '+C.border:'none',background:isToday?'#EEF2FF':'transparent'}}>
                   {d}<span style={{fontSize:'16px',fontWeight:600,display:'block',color:isToday?'#6C5FCD':'#1A1D27'}}>{day.getDate()}</span>
+                  {(()=>{const dc=cons.actif?consignesFor(cons.list,fmtDate(day),isAll?CONS_SERVICES:[service]):[];return dc.length?<span data-pdf-hide title={dc.map(c=>(c.service==='Tous'?'':c.service+' : ')+c.texte).join('\n')} style={{display:'block',fontSize:'11px',cursor:'help'}}>📝</span>:null;})()}
                 </div>
               );})}
             </div>

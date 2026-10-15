@@ -366,7 +366,7 @@ export default function EspaceSalarie({ profile, onOpenPointeuse }) {
     <div style={{minHeight:'100vh',background:C.bg,color:C.text,fontFamily:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"}}>
       {simple&&(
         // Telephone : barre de retour a l'accueil a la place de l'en-tete et des onglets
-        <div style={{position:'sticky',top:0,zIndex:20,background:C.card,borderBottom:'1px solid '+C.border,padding:'10px 12px',display:'flex',alignItems:'center',gap:'10px'}}>
+        <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'10px 12px',display:'flex',alignItems:'center',gap:'10px'}}>
           <button onClick={()=>setTab('accueil')} style={{display:'flex',alignItems:'center',gap:'6px',padding:'10px 14px',borderRadius:'12px',border:'1px solid '+C.border,background:C.bg,color:C.text,cursor:'pointer',fontFamily:'inherit',fontSize:'15px',fontWeight:600}}>‹ Accueil</button>
           <div style={{fontSize:'16px',fontWeight:700,color:C.text}}>{TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}</div>
         </div>

@@ -7,6 +7,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-variant-numeric: tabular-nums; /* chiffres alignes dans les tableaux */
+  padding-bottom: env(safe-area-inset-bottom); /* barre d'accueil de l'iPhone */
 }
 
 /* Boutons : transitions, survol et clic */

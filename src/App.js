@@ -229,7 +229,7 @@ function AppInner() {
     <PermContext.Provider value={perms}>
     <div style={{ fontFamily: "'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif", background: C.bg, minHeight: '100vh' }}>
       {simpleNav ? (
-        <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: C.card, borderBottom: '1px solid ' + C.border, padding: '10px 14px', paddingTop: 'calc(10px + env(safe-area-inset-top))', paddingLeft: 'calc(14px + env(safe-area-inset-left))', paddingRight: 'calc(14px + env(safe-area-inset-right))', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700 }}>HPA</span>
           <CampLogo height={26} />
           {cur !== 'salarie' && <button onClick={() => setPage('salarie')} style={{ padding: '9px 14px', borderRadius: '12px', border: '1px solid ' + C.border, background: C.card, color: C.text, cursor: 'pointer', fontSize: '15px', fontWeight: 600, fontFamily: 'inherit' }}>‹ Accueil</button>}
@@ -239,7 +239,7 @@ function AppInner() {
           </div>
         </nav>
       ) : (
-      <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.85)' : 'rgba(255,255,255,0.85)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 24px', display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 90, background: darkMode ? 'rgba(21,24,33,0.85)' : 'rgba(255,255,255,0.85)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid ' + C.border, padding: '10px 24px', paddingTop: 'calc(10px + env(safe-area-inset-top))', display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '18px' }}>
           <span style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #6D5EF0, #4F46E5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, letterSpacing: '0.02em', boxShadow: '0 2px 6px rgba(79,70,229,0.35)' }}>HPA</span>
           <span style={{ color: C.text, fontWeight: 700, fontSize: '14px', letterSpacing: '-0.01em' }}>Planning</span>

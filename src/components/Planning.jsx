@@ -76,6 +76,10 @@ export default function Planning() {
   const [visibility, setVisibility] = useState({});
   const [dbShifts, setDbShifts] = useState(DEFAULT_SHIFTS); // shifts depuis Supabase
   const [modal, setModal] = useState(null);
+  const [pubModal, setPubModal] = useState(false);   // fenetre de publication
+  const [pubStatus, setPubStatus] = useState([]);    // [{ week, total, published }] a partir de la semaine affichee
+  const [pubWeeks, setPubWeeks] = useState(1);       // nombre de semaines a publier
+  const [pubBusy, setPubBusy] = useState(false);
   const [form, setForm] = useState({});
   const [dupDays, setDupDays] = useState([]);
   const [toast, setToast] = useState('');
@@ -143,6 +147,14 @@ export default function Planning() {
     const r = await axios.get(API+'/employees').catch(()=>({data:[]}));
     setEmployees(r.data.sort((a,b) => (a.sort_order||0) - (b.sort_order||0)));
   }
+
+  // Etat de publication des semaines a venir (a partir de la semaine affichee)
+  async function loadPub() {
+    const r = await axios.get(API + '/schedules/publication?from=' + fmtDate(mon) + '&weeks=8').catch(() => ({ data: [] }));
+    setPubStatus(r.data || []);
+  }
+  useEffect(() => { loadPub(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftsMap]);
 
   async function loadShifts() {
     const r = await axios.get(API+'/schedules?week='+fmtDate(mon)).catch(()=>({data:[]}));
@@ -395,10 +407,23 @@ export default function Planning() {
     } catch { showToast('Erreur'); }
   }
 
+  // Publication : les salaries ne voient que les semaines publiees. On peut preparer un mois et n'en publier que 2 semaines.
   async function publishWeek() {
     if (readOnly) { showToast('Lecture seule : vous n\'avez pas le droit de modifier le planning'); return; }
-    try { const r = await axios.post(API+'/schedules/publish',{week:fmtDate(mon)}); showToast(r.data.published+' creneau(x) publie(s)'); }
+    setPubBusy(true);
+    try {
+      const r = await axios.post(API+'/schedules/publish',{week:fmtDate(mon),weeks:pubWeeks});
+      showToast(r.data.published+' creneau(x) publie(s)'+(r.data.notified?', '+r.data.notified+' salarie(s) prevenu(s)':''));
+      setPubModal(false); await loadShifts();
+    } catch { showToast('Erreur'); }
+    finally { setPubBusy(false); }
+  }
+  async function unpublishWeek(week) {
+    if (!window.confirm('Retirer la publication de la semaine du '+week.slice(8,10)+'/'+week.slice(5,7)+' ?\n\nLes salariés ne la verront plus (aucun message n\'est envoyé).')) return;
+    setPubBusy(true);
+    try { const r = await axios.post(API+'/schedules/unpublish',{week}); showToast(r.data.unpublished+' creneau(x) repasse(s) en brouillon'); await loadShifts(); }
     catch { showToast('Erreur'); }
+    finally { setPubBusy(false); }
   }
 
   async function copyWeek() {
@@ -540,7 +565,11 @@ export default function Planning() {
           {!readOnly&&<button onClick={()=>{setCopyEmpId(filtered[0]?.id||'');setCopyTargetOffset(weekOffset+1);setCopyModal(true);}} style={{background:C.amberLight,border:'1px solid '+C.amber+'66',borderRadius:'6px',padding:'6px 14px',color:C.amber,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Copier</button>}
           {!isAll&&!readOnly&&<button onClick={openTemplates} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}} title="Modèles de semaine">📋 Modèles</button>}
           <button onClick={exportPDF} disabled={exportingPDF} style={{background:C.purpleLight,border:'1px solid '+C.purple+'66',borderRadius:'6px',padding:'6px 12px',color:C.purple,cursor:exportingPDF?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600,opacity:exportingPDF?0.7:1}}>{exportingPDF?'...':'↓ PDF'}</button>
-          {!readOnly&&<button onClick={publishWeek} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>}
+          {(()=>{const w=pubStatus[0];if(!w||!w.total)return null;const draft=w.total-w.published;return(
+            <span title={draft?draft+' créneau(x) non visibles par les salariés':'Les salariés voient cette semaine'} style={{fontSize:'11px',fontWeight:600,borderRadius:'6px',padding:'5px 10px',background:draft===w.total?C.amberLight:draft?C.amberLight:C.greenLight,color:draft?C.amber:C.green,border:'1px solid '+(draft?C.amber:C.green)+'55'}}>
+              {draft===w.total?'✏️ Brouillon':draft?'⚠️ '+draft+' non publié'+(draft>1?'s':''):'✓ Publiée'}
+            </span>);})()}
+          {!readOnly&&<button onClick={()=>{setPubWeeks(1);setPubModal(true);loadPub();}} style={{background:C.green,border:'none',borderRadius:'6px',padding:'6px 14px',color:'#fff',cursor:'pointer',fontSize:'11px',fontFamily:'inherit',fontWeight:600}}>Publier</button>}
         </div>
       </div>
 
@@ -659,7 +688,7 @@ export default function Planning() {
                                   draggable={!readOnly} title={readOnly ? undefined : 'Glisser pour déplacer (Ctrl ou Alt : copier)'}
                                   onDragStart={e=>{ e.stopPropagation(); e.dataTransfer.effectAllowed='copyMove'; e.dataTransfer.setData('text/plain',shift.id); setDragShift(shift); }}
                                   onDragEnd={()=>{ setDragShift(null); setDropKey(null); }}
-                                  style={{borderRadius:'5px',padding:'3px 6px',fontSize:'10px',fontWeight:500,background:shDef.bg,border:'1px solid '+shDef.border,color:shDef.text,cursor:'pointer',position:'relative',lineHeight:1.3}}>
+                                  style={{borderRadius:'5px',padding:'3px 6px',fontSize:'10px',fontWeight:500,background:shDef.bg,border:(shift.is_published||shift.shift_type==='repos'?'1px solid ':'1.5px dashed ')+shDef.border,color:shDef.text,cursor:'pointer',position:'relative',lineHeight:1.3,opacity:shift.is_published||shift.shift_type==='repos'?1:0.8}}>
                                   {shDef.label}
                                   {shift.shift_type!=='repos'&&<div style={{fontSize:'9px',opacity:0.75}}>{shift.start_time?.slice(0,5)}–{shift.end_time?.slice(0,5)}{parseInt(shift.break_minutes||0)>0?' ('+shift.break_minutes+'m)':''}</div>}
                                   {shift.note&&<div style={{fontSize:'9px',opacity:0.9,marginTop:'1px',fontStyle:'italic',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{shift.note}</div>}
@@ -888,6 +917,39 @@ export default function Planning() {
             )}
             <div style={{fontSize:'10px',color:C.muted,marginTop:'12px',lineHeight:1.5}}>Les jours d'absence acceptée sont sautés et les créneaux déjà présents ne sont pas dupliqués. Les contrôles légaux s'appliquent ensuite dans le planning.</div>
             <button onClick={()=>setModal(null)} disabled={tplBusy} style={{width:'100%',marginTop:'14px',background:'none',border:'1px solid '+C.border,borderRadius:'8px',padding:'8px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Fermer</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal publication */}
+      {pubModal&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,padding:'16px'}} onClick={()=>!pubBusy&&setPubModal(false)}>
+          <div style={{background:C.card,border:'1px solid '+C.border,borderRadius:'12px',padding:'20px',width:'420px',maxWidth:'100%',boxShadow:'0 8px 32px '+C.shadow}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:'14px',fontWeight:600,marginBottom:'6px',color:C.text}}>Publier le planning</div>
+            <div style={{fontSize:'11px',color:C.muted,marginBottom:'14px',lineHeight:1.5}}>
+              Les salariés ne voient que les semaines publiées. Choisissez jusqu'à quelle semaine publier : les suivantes restent en brouillon, vous pouvez continuer à les préparer.
+              Chaque salarié concerné reçoit un seul message pour toute la période.
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'4px',marginBottom:'14px'}}>
+              {pubStatus.map((w,i)=>{
+                const draft=w.total-w.published, sel=i<pubWeeks;
+                const end=addDays(new Date(w.week+'T12:00:00'),6);
+                return(
+                  <label key={w.week} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderRadius:'8px',border:'1px solid '+(sel?C.green+'88':C.border),background:sel?C.greenLight:'none',cursor:'pointer',fontSize:'12px',color:C.text}}>
+                    <input type="radio" name="pubweeks" checked={pubWeeks===i+1} onChange={()=>setPubWeeks(i+1)} style={{accentColor:C.green}}/>
+                    <span style={{flex:1}}>Semaine du <strong>{w.week.slice(8,10)}/{w.week.slice(5,7)}</strong> au {fmtDate(end).slice(8,10)}/{fmtDate(end).slice(5,7)}</span>
+                    <span style={{fontSize:'11px',color:!w.total?C.muted:draft?C.amber:C.green}}>{!w.total?'vide':draft===w.total?'brouillon ('+w.total+')':draft?draft+' non publié'+(draft>1?'s':''):'✓ publiée'}</span>
+                    {w.published>0&&<button type="button" disabled={pubBusy} onClick={e=>{e.preventDefault();unpublishWeek(w.week);}} title="Repasser cette semaine en brouillon" style={{background:'none',border:'1px solid '+C.border,borderRadius:'6px',padding:'2px 7px',color:C.muted,cursor:'pointer',fontSize:'10px',fontFamily:'inherit'}}>Retirer</button>}
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={()=>setPubModal(false)} disabled={pubBusy} style={{flex:1,background:'none',border:'1px solid '+C.border,borderRadius:'8px',padding:'9px',color:C.muted,cursor:'pointer',fontSize:'12px',fontFamily:'inherit'}}>Annuler</button>
+              <button onClick={publishWeek} disabled={pubBusy} style={{flex:2,background:C.green,border:'none',borderRadius:'8px',padding:'9px',color:'#fff',cursor:pubBusy?'not-allowed':'pointer',fontSize:'12px',fontFamily:'inherit',fontWeight:600}}>
+                {pubBusy?'Publication...':'Publier '+(pubWeeks>1?pubWeeks+' semaines':'cette semaine')}
+              </button>
+            </div>
           </div>
         </div>
       )}

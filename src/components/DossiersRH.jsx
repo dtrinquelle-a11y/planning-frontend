@@ -7,6 +7,7 @@ import ContratsTravail from './ContratsTravail';
 import { usePerms } from '../permissions';
 import ClassificationBlock from './ClassificationBlock';
 import { SALARY_DEFAULTS } from '../ccHpa';
+import { sendCautionEmail, LOGEMENT_QUESTION } from '../caution';
 
 
 const AVATAR_COLORS = ['#7C6FCD','#2DB87A','#F5A623','#E85D5D','#5B9BD5','#F090D0'];
@@ -136,7 +137,11 @@ export default function DossiersRH() {
       setEmployees(prev => prev.map(e => e.id === data.id ? data : e));
       setSelectedEmp(data);
       setContractForm(contractFormFrom(data));
-      showToast('Affectation enregistree');
+      if (data.logement && !selectedEmp.logement && !data.caution_recue_at && !data.caution_lien_envoye_at) {
+        const r = await sendCautionEmail(data.id);
+        showToast(r.ok ? 'Enregistré, lien de caution envoyé à ' + r.to : 'Enregistré. Lien de caution non envoyé : ' + r.error, r.ok ? undefined : C.amber);
+        if (r.ok) { const upd = { ...data, caution_lien_envoye_at: r.at }; setEmployees(prev => prev.map(e => e.id === data.id ? upd : e)); setSelectedEmp(upd); }
+      } else showToast('Affectation enregistree');
     } catch (err) {
       showToast('Erreur : ' + err.message, C.red);
     } finally { setSavingContract(false); }
@@ -167,10 +172,24 @@ export default function DossiersRH() {
 
   async function validateEmployee(emp) {
     if (!emp.service || emp.service === 'Non defini') { showToast("Choisissez d'abord un service dans « Affectation et contrat »", C.red); return; }
-    await supabase.from('employees').update({ is_active: true }).eq('id', emp.id);
-    setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, is_active: true } : e));
-    if (selectedEmp?.id === emp.id) setSelectedEmp(e => ({ ...e, is_active: true }));
-    showToast('Compte valide !');
+    // Logement demande a l'onboarding : la direction confirme (Oui) ou refuse (Non)
+    const { data: lr } = await supabase.from('onboarding_responses').select('value, onboarding_fields!inner(label)')
+      .eq('employee_id', emp.id).eq('onboarding_fields.label', LOGEMENT_QUESTION).maybeSingle();
+    const patch = { is_active: true };
+    if (lr?.value === 'Oui' && !emp.logement) {
+      patch.logement = window.confirm(emp.first_name + ' ' + emp.last_name + " a répondu « Oui » à : logement souhaité et validé avec la direction.\n\n"
+        + 'OK : confirmer le logement (paragraphe dans le contrat, avantage en nature dans l\'export de paie, envoi du lien de caution par email).\n'
+        + 'Annuler : pas de logement (le compte est quand même validé).');
+    }
+    const { error } = await supabase.from('employees').update(patch).eq('id', emp.id);
+    if (error) { showToast('Erreur : ' + error.message, C.red); return; }
+    setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, ...patch } : e));
+    if (selectedEmp?.id === emp.id) { setSelectedEmp(e => ({ ...e, ...patch })); if (patch.logement) setContractForm(f => f && ({ ...f, logement: true })); }
+    if (patch.logement) {
+      const r = await sendCautionEmail(emp.id);
+      showToast(r.ok ? 'Compte validé, logement confirmé, lien de caution envoyé à ' + r.to : 'Compte validé, logement confirmé. Lien de caution non envoyé : ' + r.error, r.ok ? undefined : C.amber);
+      if (r.ok) setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, caution_lien_envoye_at: r.at } : e));
+    } else showToast('Compte valide !');
     window.dispatchEvent(new Event('badges-refresh')); // met a jour les pastilles du menu
   }
 

@@ -5,6 +5,7 @@ import { useTheme } from '../ThemeContext';
 import { API } from '../config';
 import { FIELDS, CONDITIONS, buildValues, inspectTemplate, renderContract, templateError, downloadBlob, resolveKey, normalize } from '../contracts';
 import { GRID, CATEGORIES, SALARY_DEFAULTS, minimumFor, montantEnLettres, eur } from '../ccHpa';
+import { sendCautionEmail } from '../caution';
 
 const LABELS = Object.fromEntries([...FIELDS, ...CONDITIONS].map(f => [f.key, f.label]));
 const pretty = k => (k.charAt(0).toUpperCase() + k.slice(1).toLowerCase()).replace(/_/g, ' ');
@@ -157,6 +158,15 @@ export default function ContratsTravail() {
     setEmps(prev => prev.map(x => x.id === emp.id ? data : x));
   }
 
+  // Lien de paiement de la caution par email (automatique a la premiere mise en logement, ou bouton "Renvoyer")
+  async function sendCaution(emp, auto) {
+    const r = await sendCautionEmail(emp.id);
+    if (r.ok) {
+      setEmps(prev => prev.map(x => x.id === emp.id ? { ...x, caution_lien_envoye_at: r.at } : x));
+      showToast('Lien de caution envoyé à ' + r.to);
+    } else showToast((auto ? 'Lien de caution non envoyé : ' : 'Envoi impossible : ') + r.error, auto ? C.amber : C.red);
+  }
+
   const setEdit = (empId, k, val) => setEdits(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), [k]: val } }));
 
   async function generate(emp) {
@@ -205,6 +215,7 @@ export default function ContratsTravail() {
       setEmps(prev => prev.map(x => x.id === emp.id ? data : x));
       setEdits(prev => { const n = { ...prev }; delete n[emp.id]; return n; });
       showToast('Contrat de ' + emp.first_name + ' généré');
+      if (data.logement && !emp.logement && !data.caution_recue_at && !data.caution_lien_envoye_at) await sendCaution(data, true);
     } catch (err) {
       showToast('Génération impossible : ' + templateError(err), C.red);
     } finally { setBusy(null); }
@@ -398,7 +409,14 @@ export default function ContratsTravail() {
                           <input type="checkbox" checked={!!emp.caution_recue_at} onChange={ev => saveLogement(emp, { caution_recue_at: ev.target.checked ? new Date().toISOString() : null })} style={{ accentColor: C.green }} />
                           Caution reçue{emp.caution_recue_at ? ' le ' + fr(emp.caution_recue_at) : ''}
                         </label>
-                        {!emp.caution_recue_at && <span style={{ color: C.muted }}>Le salarié voit le lien de paiement dans son espace.</span>}
+                        {!emp.caution_recue_at && (
+                          <>
+                            <span style={{ color: C.muted }}>{emp.caution_lien_envoye_at ? '📧 Lien envoyé le ' + fr(emp.caution_lien_envoye_at) : 'Lien de paiement pas encore envoyé'} · aussi visible dans son espace</span>
+                            {emp.logement && <button onClick={() => sendCaution(emp, false)} style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '6px', padding: '3px 9px', color: C.purple, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', fontWeight: 600 }}>
+                              {emp.caution_lien_envoye_at ? 'Renvoyer le lien' : 'Envoyer le lien'}
+                            </button>}
+                          </>
+                        )}
                       </div>
                     )}
 

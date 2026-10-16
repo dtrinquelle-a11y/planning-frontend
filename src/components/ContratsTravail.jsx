@@ -149,7 +149,8 @@ export default function ContratsTravail() {
       const n = decimal(own[salaryField]);
       entry.info.fields.filter(k => resolveKey(k) === 'salaire_lettres' && !(k in own)).forEach(k => { v[k] = n ? montantEnLettres(n) : ''; });
     }
-    entry.info.blocks.forEach(k => { const key = resolveKey(k); v[k] = key && key in known ? !!known[key] : !!t.last_values?.[k]; });
+    // Bloc portant le meme nom qu'un champ (ex. «#LOGEMENT»…«LOGEMENT»…«/LOGEMENT») : le texte du champ sert aussi de condition
+    entry.info.blocks.forEach(k => { if (entry.info.fields.includes(k)) return; const key = resolveKey(k); v[k] = key && key in known ? !!known[key] : !!t.last_values?.[k]; });
     const has = key => entry.info.fields.some(k => resolveKey(k) === key) || entry.info.blocks.some(k => resolveKey(k) === key);
     return { values: v, missing, known, e, has, salaryField };
   }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useTheme } from '../ThemeContext';
 import { API } from '../config';
+import { LOGEMENT_PHRASE, fillClause } from '../contracts';
 
 // Bareme forfaitaire Urssaf 2026 de l'avantage en nature logement (tranches en fraction du PMSS)
 export const LOGEMENT_DEFAULTS = {
@@ -9,6 +10,7 @@ export const LOGEMENT_DEFAULTS = {
   une_piece: [79.70, 93.00, 106.20, 119.40, 146.40, 172.60, 199.40, 225.60],
   par_piece: [42.60, 59.70, 79.70, 99.50, 126.10, 152.40, 185.70, 212.30],
   caution_montant: '', caution_lien: '', caution_texte: '',
+  clause_contrat: LOGEMENT_PHRASE,
 };
 const TRANCHES = [0.5, 0.6, 0.7, 0.9, 1.1, 1.3, 1.5];
 
@@ -45,6 +47,18 @@ export default function LogementReglages() {
       <div style={{ fontSize: '12px', color: C.muted, marginBottom: '18px', lineHeight: 1.6 }}>
         Pour les salariés logés (case « Logement » de la fiche ou des contrats), l'avantage en nature est calculé automatiquement dans l'export de paie
         selon le barème forfaitaire Urssaf : forfait du mois selon la rémunération et le nombre de pièces, ou par semaine commencée (¼ du forfait) pour un mois incomplet.
+      </div>
+
+      <div style={card}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>Texte de la clause logement (contrat de travail)</div>
+        <div style={{ fontSize: '11px', color: C.muted, marginBottom: '10px', lineHeight: 1.5 }}>
+          Remplace le champ «LOGEMENT» du modèle de contrat quand le salarié est logé (vide sinon). {'{civilite}'}, {'{nom}'} et {'{prenom}'} sont remplacés par ceux du salarié.
+        </div>
+        <textarea rows={5} style={{ ...inp, width: '100%', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }} value={cfg.clause_contrat} onChange={e => setCfg(c => ({ ...c, clause_contrat: e.target.value }))} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', marginTop: '6px', fontSize: '11px', color: C.muted, flexWrap: 'wrap' }}>
+          <span>Aperçu : {fillClause(cfg.clause_contrat || LOGEMENT_PHRASE, { civilite: 'Madame', nom: 'DUPONT', prenom: 'Marie' })}</span>
+          {cfg.clause_contrat !== LOGEMENT_PHRASE && <button onClick={() => setCfg(c => ({ ...c, clause_contrat: LOGEMENT_PHRASE }))} style={{ background: 'none', border: 'none', color: C.purple, cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit', padding: 0 }}>Revenir au texte par défaut</button>}
+        </div>
       </div>
 
       <div style={card}>

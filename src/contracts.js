@@ -60,7 +60,8 @@ const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
 const money = n => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Valeurs des champs connus, depuis la fiche, les reponses d'onboarding et les infos du camping
-export function buildValues(emp, responses, camping, cfg = SALARY_DEFAULTS) {
+// clause : texte de la clause logement (Parametrage > Logement), sinon LOGEMENT_PHRASE
+export function buildValues(emp, responses, camping, cfg = SALARY_DEFAULTS, clause) {
   const r = {};
   (responses || []).forEach(x => { if (x.onboarding_fields?.label) r[x.onboarding_fields.label] = x.value; });
   const hours = parseFloat(emp.contract_hours) || 0;
@@ -96,13 +97,22 @@ export function buildValues(emp, responses, camping, cfg = SALARY_DEFAULTS) {
   };
   // Phrase du logement, utilisee quand le modele contient le champ «LOGEMENT»
   v.logement_texte = emp.logement
-    ? [LOGEMENT_PHRASE.replace('{civilite}', civilite).replace('{nom}', v.nom).replace('{prenom}', v.prenom).replace(/^\s+/, ''), emp.logement_details || ''].filter(Boolean).join(' ')
+    ? [fillClause(clause && clause.trim() ? clause : LOGEMENT_PHRASE, v), emp.logement_details || ''].filter(Boolean).join(' ')
     : '';
   return v;
 }
 
-// Phrase du logement (champ «LOGEMENT»), reprise telle quelle si le logement est coche dans la fiche
-export const LOGEMENT_PHRASE = "{civilite} {nom} {prenom}, dispose pendant la durée de son contrat d'une chambre individuelle. Une caution sera demandée.";
+// Clause du logement (champ «LOGEMENT») par defaut ; modifiable dans Parametrage > Logement
+export const LOGEMENT_PHRASE = "{civilite} {nom} {prenom} disposera pendant la durée de son contrat d'une chambre individuelle, au sein d'un mobil-home partagé. Une caution est demandée et vous sera restituée 7 jours après la fin de votre contrat, dans le cas où votre logement est restitué, dans un état identique, à celui trouvé lors de votre arrivée. La validation de la caution est suspensive à la remise des clefs.";
+
+// Remplace {civilite} {nom} {prenom} (ou «CIVILITE» «NOM» «PRENOM») dans la clause
+export function fillClause(text, v) {
+  const map = { civilite: v.civilite, nom: v.nom, prenom: v.prenom };
+  return String(text)
+    .replace(/\{(civilite|nom|prenom)\}/gi, (_, k) => map[k.toLowerCase()] || '')
+    .replace(/«\s*(CIVILITE|NOM|PRENOM)\s*»/gi, (_, k) => map[k.toLowerCase()] || '')
+    .replace(/\s{2,}/g, ' ').trim();
+}
 
 // Nom de champ -> forme simple : "Date de naissance", «DATE_NAISSANCE», {date_naissance} -> "date_naissance"
 export const normalize = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');

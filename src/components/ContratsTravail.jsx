@@ -58,6 +58,7 @@ export default function ContratsTravail() {
   const [responses, setResponses] = useState({});    // employee_id -> reponses d'onboarding
   const [camping, setCamping] = useState(null);
   const [cfg, setCfg] = useState(SALARY_DEFAULTS);   // valeurs de salaire CC HPA (Parametrage)
+  const [clause, setClause] = useState('');           // clause logement du contrat (Parametrage > Logement)
   const [templates, setTemplates] = useState([]);
   const [tplData, setTplData] = useState({});        // template_id -> { buffer, info } (charge une fois)
   const [choice, setChoice] = useState({});          // employee_id -> template_id
@@ -74,13 +75,15 @@ export default function ContratsTravail() {
   function showToast(text, color) { setToast({ text, color: color || C.green }); setTimeout(() => setToast(null), 3500); }
 
   async function load() {
-    const [e, r, c, t, cc] = await Promise.all([
+    const [e, r, c, t, cc, lg] = await Promise.all([
       supabase.from('employees').select('*').eq('is_temp', false).order('last_name'),
       supabase.from('onboarding_responses').select('employee_id, value, onboarding_fields(label, field_type)'),
       supabase.from('app_settings').select('value').eq('key', 'camping_info').maybeSingle(),
       supabase.from('contract_templates').select('*').order('name'),
       supabase.from('app_settings').select('value').eq('key', 'cc_hpa').maybeSingle(),
+      supabase.from('app_settings').select('value').eq('key', 'logement').maybeSingle(),
     ]);
+    setClause(lg.data?.value?.clause_contrat || '');
     // Salaries actifs, et dossiers d'onboarding termines en attente de validation
     setEmps((e.data || []).filter(x => !x.archived_at && (x.is_active || x.onboarding_completed)));
     const byEmp = {};
@@ -130,7 +133,7 @@ export default function ContratsTravail() {
     if (!entry) return null;
     const t = templates.find(x => x.id === tplId);
     const e = effective(emp);
-    const known = buildValues(e, responses[emp.id], camping, cfg);
+    const known = buildValues(e, responses[emp.id], camping, cfg, clause);
     const own = edits[emp.id] || {};
     const v = {}, missing = [];
     entry.info.fields.forEach(k => {

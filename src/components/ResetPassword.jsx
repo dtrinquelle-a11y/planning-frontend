@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import supabase from '../supabase';
+import { passwordError, PASSWORD_HINT } from '../passwordRules';
 
 // Page /reinitialiser : ouverte depuis le lien de l'email "mot de passe oublie".
 // Supabase lit le jeton present dans l'URL et ouvre une session de recuperation.
@@ -31,7 +32,8 @@ export default function ResetPassword() {
   async function submit(e) {
     e.preventDefault();
     setError('');
-    if (password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caracteres.'); return; }
+    const pwError = passwordError(password);
+    if (pwError) { setError(pwError); return; }
     if (password !== confirm) { setError('Les deux mots de passe ne correspondent pas.'); return; }
     setLoading(true);
     try {
@@ -68,7 +70,7 @@ export default function ResetPassword() {
           <form onSubmit={submit} style={card}>
             <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '20px', color: C.text }}>Nouveau mot de passe</div>
             <div style={{ marginBottom: '12px' }}>
-              <label style={lbl}>NOUVEAU MOT DE PASSE (min. 6 caractères)</label>
+              <label style={lbl}>NOUVEAU MOT DE PASSE ({PASSWORD_HINT})</label>
               <input type="password" style={inp} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" required />
             </div>
             <div style={{ marginBottom: '20px' }}>

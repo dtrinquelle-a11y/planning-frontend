@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
+import { passwordError, PASSWORD_HINT } from '../passwordRules';
 import { SignaturePad, buildDispensePdf, dispenseText } from './DispenseMutuelle';
 
 // Photo trop lourde (telephone) : redimensionnee a 2000 px max et recompressee en JPEG pour passer sous la limite
@@ -104,7 +105,8 @@ export default function Onboarding() {
       if (!identity.email || !identity.password || (!ACCESS_TOKEN && (!identity.first_name || !identity.last_name))) {
         setError('Tous les champs sont obligatoires.'); return;
       }
-      if (identity.password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caracteres.'); return; }
+      const pwError = passwordError(identity.password);
+      if (pwError) { setError(pwError); return; }
       if (identity.password !== identity.password2) { setError('Les deux mots de passe ne sont pas identiques.'); return; }
       if (!privacyAck) { setError('Veuillez prendre connaissance de la politique de confidentialite.'); return; }
       const email = identity.email.trim().toLowerCase();
@@ -315,7 +317,7 @@ export default function Onboarding() {
               </div>
             )}
             <div style={{ marginBottom: '12px' }}><label style={lbl}>EMAIL *</label><input type="email" style={inp} value={identity.email} onChange={e => setIdentity(i => ({ ...i, email: e.target.value }))} placeholder="jean.dupont@email.com" /></div>
-            <div style={{ marginBottom: '12px' }}><label style={lbl}>MOT DE PASSE * (min. 6 caracteres)</label>
+            <div style={{ marginBottom: '12px' }}><label style={lbl}>MOT DE PASSE * ({PASSWORD_HINT})</label>
               <div style={{ position: 'relative' }}>
                 <input type={showPwd ? 'text' : 'password'} autoComplete="new-password" style={{ ...inp, paddingRight: '44px' }} value={identity.password} onChange={e => setIdentity(i => ({ ...i, password: e.target.value }))} placeholder="••••••••" />
                 <button type="button" onClick={() => setShowPwd(v => !v)} title={showPwd ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
